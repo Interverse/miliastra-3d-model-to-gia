@@ -251,9 +251,10 @@ function splitIntoModels(name, decorations, maxPerModel = 999, position) {
 
 return { buildGia, splitIntoModels, W, packedVarints,
   OBJECT_TEMPLATE_ID, TRIANGLE_MODEL_ID, SQUARE_MODEL_ID,
+  OBJ_GUID_BASE, DEC_GUID_BASE,
   MAX_DECORATIONS_PER_MODEL: 999 };
 })();
 
 export const { buildGia, splitIntoModels, MAX_DECORATIONS_PER_MODEL,
-  TRIANGLE_MODEL_ID, SQUARE_MODEL_ID } = GIA;
+  TRIANGLE_MODEL_ID, SQUARE_MODEL_ID, DEC_GUID_BASE } = GIA;
 export default GIA;

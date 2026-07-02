@@ -199,10 +199,26 @@ export function renderShell(root, { primitives = true } = {}) {
         <button id="btn-copy-json" class="small">Copy JSON</button>
         <button id="btn-close-modal" class="small" title="Close">✕</button>
       </div>
+      <div class="modal-sub" id="prim-note"></div>
       <div class="modal-body">
         <table id="prim-table">
           <thead>
-            <tr><th>✓</th><th>#</th><th>Kind</th><th>Position</th><th>Rotation</th><th>Zoom</th><th>Color</th></tr>
+            <tr>
+              <th rowspan="2">✓</th>
+              <th rowspan="2">#</th>
+              <th rowspan="2">Model Name</th>
+              <th rowspan="2">ID</th>
+              <th rowspan="2">Kind</th>
+              <th colspan="3" class="grp-start grp-head">Position</th>
+              <th colspan="3" class="grp-start grp-head">Rotation</th>
+              <th colspan="3" class="grp-start grp-head">Zoom</th>
+              <th rowspan="2" class="grp-start">Color</th>
+            </tr>
+            <tr>
+              <th class="grp-start sub">X</th><th class="sub">Y</th><th class="sub">Z</th>
+              <th class="grp-start sub">X</th><th class="sub">Y</th><th class="sub">Z</th>
+              <th class="grp-start sub">X</th><th class="sub">Y</th><th class="sub">Z</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>

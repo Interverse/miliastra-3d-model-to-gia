@@ -8,7 +8,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 import { Viewer } from './viewer.js';
 import { extractMeshes } from './extract.js';
-import { buildGia, splitIntoModels, MAX_DECORATIONS_PER_MODEL } from '../engine/gia/gia-writer.js';
+import { buildGia, splitIntoModels, MAX_DECORATIONS_PER_MODEL, TRIANGLE_MODEL_ID, SQUARE_MODEL_ID } from '../engine/gia/gia-writer.js';
 import { PRESETS } from '../engine/convert/converter.js';
 
 // Initialize the app against an already-rendered shell (see ui-shell.js).
@@ -565,13 +565,16 @@ let processed = [];
 let renderedRows = 0;
 const ROW_CHUNK = 1000;
 
-const fmtVec = (v) => {
-  const f = (n) => {
-    const r = Math.round(n * 10000) / 10000;
-    return Object.is(r, -0) ? 0 : r;
-  };
-  return `${f(v.x)}, ${f(v.y)}, ${f(v.z)}`;
+const fmtNum = (n) => {
+  const r = Math.round(n * 10000) / 10000;
+  return String(Object.is(r, -0) ? 0 : r);
 };
+
+// Model Name/ID of the primitive's base decoration model, as defined in the
+// provided base .gia files: square -> Cuboid (10009001), triangle -> Wall
+// (20002125).
+const modelName = (d) => d.kind === 'square' ? 'Cuboid' : 'Wall';
+const modelId = (d) => d.kind === 'square' ? SQUARE_MODEL_ID : TRIANGLE_MODEL_ID;
 
 function appendRows() {
   if (!lastResult) return;
@@ -594,22 +597,28 @@ function appendRows() {
       tr.classList.toggle('done', cb.checked);
     });
     tdCheck.appendChild(cb);
-
-    const cells = [
-      String(i + 1),
-      d.kind,
-      fmtVec(d.position),
-      fmtVec(d.rotationDeg),
-      fmtVec(d.scale),
-    ];
     tr.appendChild(tdCheck);
-    for (const text of cells) {
+
+    // [text, groupStart?]
+    const cells = [
+      [String(i + 1)],
+      [modelName(d)],
+      [String(modelId(d))],
+      [d.kind],
+      [fmtNum(d.position.x), true], [fmtNum(d.position.y)], [fmtNum(d.position.z)],
+      [fmtNum(d.rotationDeg.x), true], [fmtNum(d.rotationDeg.y)], [fmtNum(d.rotationDeg.z)],
+      [fmtNum(d.scale.x), true], [fmtNum(d.scale.y)], [fmtNum(d.scale.z)],
+    ];
+    for (const [text, grp] of cells) {
       const td = document.createElement('td');
       td.textContent = text;
+      if (grp) td.className = 'grp-start';
       tr.appendChild(td);
     }
     const tdColor = document.createElement('td');
+    tdColor.className = 'grp-start';
     const hex = '#' + d.color.toString(16).padStart(6, '0');
+    tdColor.dataset.copy = hex;
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = hex;
@@ -624,12 +633,51 @@ function appendRows() {
   if (!more.hidden) more.textContent = `Show remaining ${decs.length - renderedRows} rows`;
 }
 
+// double-click any value cell to copy just that value
+$('prim-table')?.addEventListener('dblclick', async (e) => {
+  const td = e.target.closest('td');
+  if (!td || td.querySelector('input')) return;
+  const value = td.dataset.copy ?? td.textContent.trim();
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast(`Copied ${value}`);
+  } catch (err) {
+    showToast('Clipboard unavailable');
+  }
+});
+
+let toastTimer = null;
+function showToast(text) {
+  let el = $('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
+}
+
 $('btn-view-prims')?.addEventListener('click', () => {
   if (!lastResult) return;
-  $('prim-count').textContent =
-    `${lastResult.decorations.length} primitives · positions/zoom in units of 0.1 m · rotation in degrees`;
+  $('prim-count').textContent = `${lastResult.decorations.length} primitives`;
+  $('prim-note').textContent =
+    'In the game, create an Empty Model with an XYZ zoom of 0.1 and add these primitives to it. ' +
+    'Position and zoom are in units of 0.1 m; rotation is in degrees. ' +
+    'Double-click any value to copy it to the clipboard.';
   if (renderedRows === 0) appendRows();
   $('prim-modal').hidden = false;
+  // pin the X/Y/Z subheader row exactly below the group header row so no
+  // gap shows scrolled values behind the sticky headers
+  requestAnimationFrame(() => {
+    const h = $('prim-table').tHead.rows[0].offsetHeight;
+    for (const th of $('prim-table').querySelectorAll('thead th.sub')) {
+      th.style.top = h + 'px';
+    }
+  });
 });
 $('btn-close-modal')?.addEventListener('click', () => { $('prim-modal').hidden = true; });
 $('prim-modal')?.addEventListener('click', (e) => {
@@ -642,6 +690,8 @@ function primitivesJson() {
     name: currentName,
     units: 'position/zoom in units of 0.1 m; rotation in degrees (YXZ unless configured otherwise)',
     primitives: lastResult.decorations.map((d, i) => ({
+      modelName: modelName(d),
+      modelId: modelId(d),
       kind: d.kind,
       position: d.position,
       rotationDeg: d.rotationDeg,
