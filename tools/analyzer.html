@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>GIA Analyzer</title>
+<style>
+  body { font-family: monospace; background: #111; color: #ddd; margin: 16px; }
+  pre { white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<h3>GIA Protobuf Analyzer</h3>
+<input type="file" id="fi" multiple>
+<pre id="out">Select .gia files…</pre>
+<script>
+window.files = {};   // name -> Uint8Array
+
+const $out = document.getElementById('out');
+
+document.getElementById('fi').addEventListener('change', async e => {
+  for (const f of e.target.files) {
+    window.files[f.name] = new Uint8Array(await f.arrayBuffer());
+  }
+  $out.textContent = Object.entries(window.files)
+    .map(([n, b]) => `${n}: ${b.length} bytes, first16=[${Array.from(b.slice(0,16)).join(',')}]`)
+    .join('\n');
+});
+
+// ---------- generic protobuf wire decoding ----------
+
+// robust BigInt varint
+function readVarintBig(buf, pos) {
+  let v = 0n, shift = 0n, b;
+  const start = pos;
+  do {
+    if (pos >= buf.length) throw new Error('varint overrun @' + start);
+    b = buf[pos++];
+    v |= BigInt(b & 0x7f) << shift;
+    shift += 7n;
+    if (shift > 70n) throw new Error('varint too long @' + start);
+  } while (b & 0x80);
+  return { value: v, pos };
+}
+
+function isProbablyMessage(bytes) {
+  if (bytes.length === 0) return false;
+  try {
+    const fields = decodeMessage(bytes, 0, bytes.length, 0);
+    return fields.length > 0;
+  } catch (e) { return false; }
+}
+
+function bytesToLatin(bytes) {
+  let s = '';
+  for (const b of bytes) s += (b >= 32 && b < 127) ? String.fromCharCode(b) : '.';
+  return s;
+}
+
+function isProbablyString(bytes) {
+  if (bytes.length === 0) return true;
+  try {
+    const s = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    for (const ch of s) {
+      const c = ch.codePointAt(0);
+      if (c < 32 && c !== 9 && c !== 10 && c !== 13) return false;
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+// decode a message region; throws on malformed
+function decodeMessage(buf, start, end, depth) {
+  if (depth > 40) throw new Error('too deep');
+  const fields = [];
+  let pos = start;
+  while (pos < end) {
+    const tagR = readVarintBig(buf, pos);
+    pos = tagR.pos;
+    const tag = tagR.value;
+    const fieldNo = Number(tag >> 3n);
+    const wire = Number(tag & 7n);
+    if (fieldNo === 0 || fieldNo > 536870911) throw new Error('bad field ' + fieldNo);
+    const f = { field: fieldNo, wire };
+    if (wire === 0) {
+      const r = readVarintBig(buf, pos);
+      f.varint = r.value;
+      pos = r.pos;
+    } else if (wire === 1) {
+      if (pos + 8 > end) throw new Error('fixed64 overrun');
+      f.start = pos;
+      f.bytes = buf.slice(pos, pos + 8);
+      pos += 8;
+    } else if (wire === 5) {
+      if (pos + 4 > end) throw new Error('fixed32 overrun');
+      f.start = pos;
+      f.bytes = buf.slice(pos, pos + 4);
+      pos += 4;
+    } else if (wire === 2) {
+      const r = readVarintBig(buf, pos);
+      const len = Number(r.value);
+      pos = r.pos;
+      if (pos + len > end) throw new Error('len overrun');
+      f.start = pos; // content start (after length varint)
+      f.bytes = buf.slice(pos, pos + len);
+      pos += len;
+    } else {
+      throw new Error('wire ' + wire);
+    }
+    fields.push(f);
+  }
+  if (pos !== end) throw new Error('trailing');
+  return fields;
+}
+
+function fmtVarint(v) {
+  let s = v.toString();
+  // zigzag + signed interpretations if potentially negative 64-bit
+  if (v > 0x7fffffffffffffffn) s += ' (int64:' + BigInt.asIntN(64, v).toString() + ')';
+  return s;
+}
+
+function fmtFixed(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length === 4) {
+    return `f32=${dv.getFloat32(0, true).toPrecision(7)} i32=${dv.getInt32(0, true)} u32=0x${dv.getUint32(0, true).toString(16)}`;
+  }
+  return `f64=${dv.getFloat64(0, true)} i64=${dv.getBigInt64(0, true)}`;
+}
+
+// pretty tree dump
+function dumpTreeText(buf, start, end, depth, path) {
+  let out = '';
+  const pad = '  '.repeat(depth);
+  let fields;
+  try { fields = decodeMessage(buf, start, end, depth); }
+  catch (e) { return pad + '!! not a message: ' + e.message + '\n'; }
+  for (const f of fields) {
+    const p = path ? path + '.' + f.field : '' + f.field;
+    if (f.wire === 0) {
+      out += `${pad}${p}: varint ${fmtVarint(f.varint)}\n`;
+    } else if (f.wire === 5 || f.wire === 1) {
+      out += `${pad}${p}: ${fmtFixed(f.bytes)}\n`;
+    } else {
+      const b = f.bytes;
+      if (b.length > 0 && isProbablyMessage(b) && !(isProbablyString(b) && b.length < 12 && /^[ -~]*$/.test(bytesToLatin(b)) && looksLikeWord(b))) {
+        out += `${pad}${p}: msg(${b.length})\n`;
+        out += dumpTreeText(buf, f.start, f.start + b.length, depth + 1, p);
+      } else if (isProbablyString(b)) {
+        out += `${pad}${p}: str(${b.length}) "${new TextDecoder().decode(b)}"\n`;
+      } else {
+        out += `${pad}${p}: bytes(${b.length}) [${Array.from(b.slice(0, 64)).join(',')}]${b.length > 64 ? '…' : ''}\n`;
+      }
+    }
+  }
+  return out;
+}
+
+function looksLikeWord(bytes) {
+  // heuristic: mostly letters/digits/spaces => prefer string over message
+  let good = 0;
+  for (const c of bytes) if ((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 32 || c === 95 || c === 46 || c === 45) good++;
+  return good / bytes.length > 0.85;
+}
+
+window.dump = function (name) {
+  const b = window.files[name];
+  if (!b) return 'no file ' + name;
+  return dumpTreeText(b, 0, b.length, 0, '');
+};
+
+// Dump the AssetBundle payload of a .gia file (skips the 20-byte header and
+// 4-byte trailer; see docs/gia-format.md).
+window.dumpGia = function (name) {
+  const b = window.files[name];
+  if (!b) return 'no file ' + name;
+  const plen = new DataView(b.buffer, b.byteOffset).getUint32(16, false);
+  return dumpTreeText(b, 20, 20 + plen, 0, '');
+};
+
+window.show = function (name) {
+  $out.textContent = window.dump(name);
+  return 'ok, ' + $out.textContent.length + ' chars';
+};
+
+window.decodeMessage = decodeMessage;
+window.dumpTreeText = dumpTreeText;
+window.readVarintBig = readVarintBig;
+
+window.hex = function (name, off, len) {
+  const b = window.files[name];
+  let s = '';
+  for (let i = off; i < Math.min(off + len, b.length); i += 16) {
+    const row = Array.from(b.slice(i, i + 16));
+    s += i.toString(16).padStart(6, '0') + '  ' +
+      row.map(x => x.toString(16).padStart(2, '0')).join(' ').padEnd(48) + '  ' +
+      bytesToLatin(b.slice(i, i + 16)) + '\n';
+  }
+  return s;
+};
+</script>
+</body>
+</html>

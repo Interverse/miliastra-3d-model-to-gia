@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D Model → GIA Converter</title>
+<link rel="stylesheet" href="../css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app-root"></div>
+<script type="module">
+  import { renderShell } from '../js/ui-shell.js';
+  import { initApp } from '../js/app.js';
+  renderShell(document.getElementById('app-root'), { primitives: false });
+  initApp({ mode: 'gia' });
+</script>
+</body>
+</html>

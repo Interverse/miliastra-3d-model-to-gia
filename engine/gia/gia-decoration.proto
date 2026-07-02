@@ -1,0 +1,160 @@
+syntax = "proto3";
+// Completion of gia.proto for decoration/object export files.
+// Reverse-engineered from sample .gia exports (engine 6.7.0) and verified by
+// byte-exact round-trip of all seven samples. See docs/gia-format.md.
+//
+// NOTE ON THE FILE CONTAINER: the protobuf AssetBundle payload is wrapped in a
+// non-protobuf binary container:
+//   uint32be file_len_minus_4; uint32be 1; uint32be 806; uint32be 3;
+//   uint32be payload_len; bytes payload; uint32be 1657;
+
+// package gia;
+
+// AssetBundle (matches gia.proto, with the observed repeated primary entries)
+message DecorationAssetBundle {
+  repeated DecorationResourceEntry objects     = 1; // one OBJECT per model
+  repeated DecorationResourceEntry decorations = 2; // all decoration entities
+  string export_tag     = 3; // "{UID}-{UNIX_TIME}-{FILE_ID}-\{NAME}.gia"
+  string engine_version = 5; // "6.7.0"
+}
+
+message Locator { // trimmed ResourceLocator
+  int32 service_domain = 2; // 1 = DEFAULT
+  int32 kind           = 3; // 1 = PREFAB (object), 14 = DECORATION
+  int64 asset_guid     = 4;
+}
+
+message DecorationResourceEntry {
+  Locator          identity       = 1;
+  repeated Locator reference_list = 2;  // object -> its decoration guids
+  string           internal_name  = 3;
+  int32            resource_class = 5;  // 1 = OBJECT, 28 = DECORATION
+
+  // payload oneof (completes ResourceEntry.payload):
+  PrefabDefinition     prefab     = 11;  // when resource_class = 1
+  DecorationDefinition decoration = 21;  // when resource_class = 28
+}
+
+// ---------------- OBJECT payload ----------------
+
+message PrefabDefinition { PrefabBody body = 1; }
+
+message PrefabBody {
+  int64 guid        = 1;
+  int64 template_id = 2;              // 10005018 = "MPActionGroup" group
+  repeated Component logic_components  = 6;
+  repeated Component entity_components = 7;
+  int32 tail_marker = 10;             // always 1
+}
+
+// ---------------- DECORATION payload ----------------
+
+message DecorationDefinition { DecorationBody body = 1; }
+
+message DecorationBody {
+  int64 guid     = 1;
+  int64 model_id = 2;                 // 20002125 = right-triangle model
+  int32 const_3  = 3;                 // always 1
+  repeated Component logic_components  = 4;
+  repeated Component entity_components = 5;
+  string tail = 11;                   // always empty
+}
+
+// ---------------- Components ----------------
+// Generic envelope: field 1 is the component type id; exactly one body field
+// is set, and its field number depends on the type id (observed pairs below).
+
+message Component {
+  int32 type_id = 1;
+
+  // type 1 on objects/decorations: display name
+  NameBody name = 11;              // {1: name, [2: 1 on objects]}
+  // type 2, 3, 6, 16, 17, 20: empty bodies
+  bytes empty_12 = 12;
+  bytes empty_13 = 13;
+  IntBody body_14 = 14;            // type 4: {1:1}
+  PairBody body_15 = 15;           // type 5: {1:1, 2:1}
+  bytes empty_16 = 16;
+  PhysicsBody body_17 = 17;        // type 7
+  MarkerBody body_18 = 18;         // type 8: {1:1, 501:1}
+  RootNodeBody body_21 = 21;       // type 11: GI_RootNode block
+  TransformBody transform = 11001; // see note below
+  ColorBody tint = 22;             // type 13 (objects): {4: ARGB}
+  GroupNameBody body_23 = 23;      // type 14: {1:{3:"MPActionGroup"}}
+  bytes empty_26 = 26;
+  bytes empty_27 = 27;
+  IntBody body_29 = 29;            // type 19: {1:1}
+  bytes empty_30 = 30;
+  RenderBody render = 32;          // type 22: color/render params
+  FloatBody body_48 = 48;          // type 38: {1: 1.0}
+  ChildLinkBody links = 50;        // type 40: children (501) / parent (502)
+  bytes empty_65 = 65;             // type 61
+  bytes empty_66 = 66;             // type 62
+  bytes empty_93 = 93;             // type 111
+  IntBody body_22_marker = 10022;  // type 12 uses field 22 {501:1} (clashes
+                                   // with tint field number; disambiguate by
+                                   // type_id when parsing)
+}
+// NOTE: type 1 in entity_components (field 7 on objects, field 5 on
+// decorations) uses body field 11 as TransformBody, while type 1 in
+// logic_components uses body field 11 as NameBody. The wire format overloads
+// field 11; parse by context. Fields 11001/10022 above are documentation-only
+// placeholders for the overloaded cases.
+
+message NameBody  { string name = 1; int32 flag = 2; }
+message IntBody   { int32 v = 1; int32 v501 = 501; }
+message PairBody  { int32 a = 1; int32 b = 2; }
+message FloatBody { float v = 1; }
+message MarkerBody{ int32 v = 1; int32 v501 = 501; }
+
+message TransformBody {
+  // Local units are 0.1 m (object node is scaled 0.1): units = meters * 10.
+  // position/rotation omit zero fields; an all-zero vector is an empty msg.
+  // scale always writes all three floats.
+  Vec3f position = 1;   // decoration-local units
+  Vec3f rotation = 2;   // Euler degrees x/y/z
+  Vec3f scale    = 3;   // canonical legs: 0.5 m at scale 1 along local Y & Z
+  uint32 tint    = 501; // objects only: 0xFFFFFFFF
+}
+
+message Vec3f { float x = 1; float y = 2; float z = 3; }
+
+message ColorBody { uint32 argb = 4; }
+
+message RenderBody {
+  int32  flag      = 1; // 1 on decorations, absent on objects
+  uint32 color_argb = 3; // 0xAARRGGBB
+  float  brightness = 4; // 100.0
+  uint32 color_rgb  = 5; // 0xRRGGBB
+  int32  render_dist = 6; // 6700
+}
+
+message GroupNameBody { Inner inner = 1; message Inner { string name = 3; } }
+
+message RootNodeBody {
+  Inner inner = 1;
+  message Inner {
+    string node    = 1;   // "GI_RootNode"
+    string s2      = 2;   // ""
+    string s3      = 3;   // ""
+    string anchor  = 502; // "Center Origin"
+    int32  flag    = 504; // 1
+    string root    = 505; // "RootNode"
+  }
+}
+
+message PhysicsBody {
+  float f1 = 1;          // 1000.0
+  float f3 = 3;          // 500.0
+  int32 i4 = 4;          // 1
+  int32 i5 = 5;          // 1
+  Ref  ref = 6;          // {2: 10200002}
+  message Ref { int64 id = 2; }
+  float f8 = 8;  float f9 = 9;  float f10 = 10; float f11 = 11; // all 0.1
+  float f12 = 12; float f13 = 13; float f14 = 14; float f15 = 15;
+}
+
+message ChildLinkBody {
+  repeated int64 child_guids = 501 [packed = true]; // on objects
+  int64 parent_guid = 502;                          // on decorations
+}
