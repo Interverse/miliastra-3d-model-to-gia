@@ -75,40 +75,52 @@ export class Viewer {
 
   // triangles: Float32Array of xyz triplets (9 per triangle), colors:
   // Float32Array rgb per vertex (0..1). Displayed as wireframe + optional fill.
-  // offset: {x,y,z} display-space shift so a recentered conversion still
-  // overlays the original (uncentered) source model.
-  setOverlay(positions, colors, mode, offset) {
+  // Rebuild all reconstruction overlays.
+  // entries: [{ positions: Float32Array, colors: Float32Array|null,
+  //             offset: {x,y,z}|null, visible: boolean }]
+  // offset = display-space shift so a recentered conversion still overlays
+  // the original (uncentered) source model.
+  setOverlays(entries, mode) {
     this.overlayGroup.clear();
-    this.overlayGroup.position.set(0, 0, 0);
-    if (offset) this.overlayGroup.position.set(offset.x, offset.y, offset.z);
-    if (!positions || positions.length === 0 || mode === 'off') return;
+    if (mode === 'off' || !entries) return;
+    for (const e of entries) {
+      if (!e.visible || !e.positions || e.positions.length === 0) continue;
+      const group = new THREE.Group();
+      if (e.offset) group.position.set(e.offset.x, e.offset.y, e.offset.z);
 
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    if (colors) geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geo.computeVertexNormals();
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(e.positions, 3));
+      if (e.colors) geo.setAttribute('color', new THREE.BufferAttribute(e.colors, 3));
+      geo.computeVertexNormals();
 
-    if (mode === 'solid' || mode === 'both') {
-      // unlit material: preview colors match the .gia values exactly
-      const mat = new THREE.MeshBasicMaterial({
-        vertexColors: !!colors,
-        side: THREE.DoubleSide,
-        polygonOffset: true,
-        polygonOffsetFactor: 1,
-        polygonOffsetUnits: 1,
-      });
-      this.overlayGroup.add(new THREE.Mesh(geo, mat));
+      if (mode === 'solid' || mode === 'both') {
+        // unlit material: preview colors match the .gia values exactly
+        const mat = new THREE.MeshBasicMaterial({
+          vertexColors: !!e.colors,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
+        group.add(new THREE.Mesh(geo, mat));
+      }
+      if (mode === 'wireframe' || mode === 'both') {
+        const wireGeo = new THREE.WireframeGeometry(geo);
+        const wireMat = new THREE.LineBasicMaterial({
+          color: mode === 'both' ? 0x101114 : 0x36d47e,
+          transparent: true,
+          opacity: 0.85,
+          depthTest: true,
+        });
+        group.add(new THREE.LineSegments(wireGeo, wireMat));
+      }
+      this.overlayGroup.add(group);
     }
-    if (mode === 'wireframe' || mode === 'both') {
-      const wireGeo = new THREE.WireframeGeometry(geo);
-      const wireMat = new THREE.LineBasicMaterial({
-        color: mode === 'both' ? 0x101114 : 0x36d47e,
-        transparent: true,
-        opacity: 0.85,
-        depthTest: true,
-      });
-      this.overlayGroup.add(new THREE.LineSegments(wireGeo, wireMat));
-    }
+  }
+
+  // legacy single-overlay API (clears everything when called with null)
+  setOverlay(positions, colors, mode, offset) {
+    this.setOverlays(positions ? [{ positions, colors, offset, visible: true }] : [], mode ?? 'off');
   }
 
   setModelVisible(v) { this.modelGroup.visible = v; }

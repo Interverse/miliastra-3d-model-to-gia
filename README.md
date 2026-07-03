@@ -89,6 +89,99 @@ at the origin) with a position, per-axis scale, and Euler rotation:
 | Transform | Pivot (moved to the origin) and rotation applied before conversion; previewed live in the viewport |
 | Collision | Whether exported models collide (object component 5) |
 
+### Conversion modes
+
+- **Direct** — converts mesh faces as-is (Triangles, or Triangles + Squares).
+- **Voxel** — rebuilds the model from colored voxels: triangles are rasterized
+  into a grid (resolution slider), voxel colors are sampled straight from the
+  textures, similar colors merge (Voxel color tolerance), fully enclosed
+  voxels are culled automatically. Two surface styles:
+  - **Boxes** — greedy-merged cuboids (blocky voxel look).
+  - **Marching cubes** — standard marching cubes (classic 256-case tables)
+    run directly on the voxel occupancy (inside/outside classified by a
+    border flood fill; optional smoothing passes round the surface, the Iso
+    offset inflates or erodes it). Face colors interpolate the connected
+    voxel colors at each edge crossing, giving smooth color transitions.
+    The resulting triangles go through the normal squares/right-triangle
+    pipeline.
+
+  The resolution slider defaults to 256 and the numeric box next to it
+  accepts any value beyond the slider range. Interior voxels invisible from
+  the outside (including sealed cavity walls) are culled by a visibility
+  flood fill.
+- **Pixel Perfect** — reproduces voxel-style models exactly: each rectangular
+  face is mapped onto its texture pixels (nearest texel, no averaging or
+  misalignment) and only identical colors (within the Texel merge tolerance,
+  default 0) are greedy-merged into squares. **Overdraw layering** (on by
+  default, toggleable) gives each opaque face one background square in its
+  dominant color and layers only the differing pixel regions 0.001 m above it
+  along the face normal — same appearance, significantly fewer decorations.
+### Texture editing
+
+A **Texture** panel appears for textured models (a dropdown selects between
+multiple textures). All edits feed the conversion directly:
+
+- **Color reduction** — true color quantization: similar colors merge into
+  fewer representatives (agglomerative, weighted by frequency); higher
+  strength collapses the palette dramatically while preserving appearance.
+- **Recoloring** — hue shift, saturation, brightness, contrast, invert.
+- Everything is non-destructive until Reset; adjustments recompute from the
+  original pixels so sliders never accumulate loss.
+
+### Edit mode
+
+With a generated reconstruction selected, the **Edit model** panel lets you:
+
+- click primitives to select them (the type and index are shown; Shift-click
+  adds), or **drag a box** to select every primitive visible inside it —
+  occluded primitives are skipped, and selection can optionally be filtered
+  by color;
+- manipulate the selected primitive with standard **Move / Rotate / Scale
+  gizmos** directly in the viewport (or numerically);
+- recolor the selection with an RGB picker;
+- press **Delete** to remove the selection and **Ctrl+Z** to undo the last
+  edit (placements, deletions, transforms, and recolors are all undoable);
+- place new primitives (any type, color, size) onto surfaces;
+- **Save edits as a new model** to store the result as its own
+  reconstruction.
+
+While Edit mode is on, the left mouse button drives the tools — orbit with
+the right mouse button. Generate stays pinned at the bottom of the sidebar,
+and the reconstruction list has a one-click **Clear all generated models**
+button.
+
+When the decoration budget is exceeded, adjacent same-plane squares are
+merged with progressively relaxed color tolerance before anything is
+dropped; any remaining excess drops the smallest pieces first.
+
+Each Generate hides the previous reconstructions and shows only the new one;
+older results stay in the reconstruction list and can be re-enabled for
+comparison. Parameters are grouped per mode (Direct presets/color settings no
+longer apply to Voxel/Pixel/Fit, which have their own controls).
+
+### Primitive models (from the base .gia files)
+
+| Kind | Model | ID | Canonical (scale 10) |
+|---|---|---|---|
+| Triangle | Roof Component | 20001925 | 1×1 m legs (+Y / −Z), thin X |
+| Square/Box | Cuboid | 10009001 | 1 m cube |
+| Plane | Plane | 10009003 | 1×1 m on XZ |
+| Sphere | Sphere | 10009002 | 1 m diameter |
+| Cylinder | Cylinder | 10009008 | 1 m dia × 1 m h |
+| Cone | Cone | 10009009 | 0.5 m radius × 1 m h |
+| Prism | Triangular Prism | 10009004 | 1 m tall, 0.75 m side |
+
+No generated decoration ever exceeds a zoom of 50 on any axis — oversized
+flat pieces and boxes are split automatically, and curved fits are rejected
+above the limit.
+
+### Comparing reconstructions
+
+Every Generate keeps its result as an entry in the reconstruction list with
+its own visibility toggle (plus the source-model toggle), so different modes
+and settings can be compared side by side; the radio selection picks which
+reconstruction feeds the primitive table / .gia download.
+
 ### Square primitives
 
 Besides the right triangle (model 20002125), the converter can emit the

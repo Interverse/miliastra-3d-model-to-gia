@@ -6,12 +6,24 @@
 // on voxel models (e.g. a uniform 16x16 face becomes one placement).
 
 import { v3, add, mul, dot, cross } from './vec3.js';
-import { colorToRgbInt } from './color.js';
+import { colorToRgbInt, colorDistance } from './color.js';
 
 const q = (x, s = 1e4) => Math.round(x * s) / s;
 
+// opts.colorTolerance > 0 groups near-equal colors together (used when the
+// decoration budget forces extra merging); 0/absent requires exact colors.
 export function coalesceSquares(squares, opts = {}) {
   if (squares.length < 2) return squares;
+  const colorTol = opts.colorTolerance ?? 0;
+  const clusterReps = [];
+  const colorKeyOf = (c) => {
+    if (colorTol <= 0) return String(colorToRgbInt(c));
+    for (let i = 0; i < clusterReps.length; i++) {
+      if (colorDistance(c, clusterReps[i]) <= colorTol) return 'c' + i;
+    }
+    clusterReps.push(c);
+    return 'c' + (clusterReps.length - 1);
+  };
 
   // group by (normal, plane offset, color, size, edge direction)
   const groups = new Map();
@@ -24,7 +36,7 @@ export function coalesceSquares(squares, opts = {}) {
     const key = [
       q(n.x, 100), q(n.y, 100), q(n.z, 100),
       q(off, 1e3),
-      colorToRgbInt(sq.color),
+      colorKeyOf(sq.color),
       q(sq.scale.x, 1e3), q(sq.scale.z, 1e3),
       q(u.x, 100), q(u.y, 100), q(u.z, 100),
     ].join('|');

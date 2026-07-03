@@ -15,7 +15,12 @@ export { colorDistance, sampleTriangleColor, colorToRgbInt } from './convert/col
 export { pairIntoSquares, squarePlacement } from './convert/squares.js';
 export { coalesceSquares } from './convert/coalesce.js';
 export { decimateTriangles } from './convert/decimate.js';
-export { spriteToTriangles } from './convert/sprite.js';
+export { spriteToTriangles, spriteToBoxes } from './convert/sprite.js';
+export { voxelizeTriangles } from './convert/voxelize.js';
+export { marchingCubesSurface } from './convert/marchingcubes.js';
+export { pixelPerfect } from './convert/pixelperfect.js';
+export { capPlacements, MAX_ZOOM } from './convert/cap.js';
 export { buildGia, splitIntoModels, MAX_DECORATIONS_PER_MODEL,
-  TRIANGLE_MODEL_ID, LEGACY_TRIANGLE_MODEL_ID, SQUARE_MODEL_ID } from './gia/gia-writer.js';
+  TRIANGLE_MODEL_ID, LEGACY_TRIANGLE_MODEL_ID, SQUARE_MODEL_ID,
+  PRIMITIVE_MODEL_IDS } from './gia/gia-writer.js';
 export * as vec3 from './convert/vec3.js';

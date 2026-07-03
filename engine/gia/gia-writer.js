@@ -82,7 +82,18 @@ const OBJECT_TEMPLATE_ID = 10005018;   // MPActionGroup
 const TRIANGLE_MODEL_ID = 20001925;    // right-triangle model (v2 reference,
                                        // legs 1/7.7 m +Y and 1/3.704 m -Z)
 const LEGACY_TRIANGLE_MODEL_ID = 20002125; // old v1 triangle (0.5 m legs +Y/+Z)
-const SQUARE_MODEL_ID = 10009001;      // square decoration asset (thin Y)
+const SQUARE_MODEL_ID = 10009001;      // square/cube decoration (0.1 m/axis @1)
+
+// decoration model per primitive kind (all 0.1 m per scale unit, centered)
+const PRIMITIVE_MODEL_IDS = {
+  triangle: TRIANGLE_MODEL_ID,
+  square: SQUARE_MODEL_ID,   // unit cube
+  plane: 10009003,           // 1×1 m XZ plane at scale 10
+  sphere: 10009002,          // 1 m diameter at scale 10
+  cylinder: 10009008,        // 1 m dia × 1 m height at scale 10
+  prism: 10009004,           // 1 m tall, 0.75 m equilateral side at scale 10
+  cone: 10009009,            // 0.5 m radius × 1 m height at scale 10, centered
+};
 const OBJ_GUID_BASE = 1077936129;      // 0x40400001
 const DEC_GUID_BASE = 1073741837;      // 0x4000000D
 const HEADER_MAGIC = [1, 806, 3];
@@ -161,7 +172,7 @@ function writeDecorationEntry(w, dec, parentGuid) {
     e.vint(5, 28);
     e.msg(21, (p) => p.msg(1, (b) => {
       b.vint(1, dec.guid);
-      b.vint(2, dec.kind === 'square' ? SQUARE_MODEL_ID : TRIANGLE_MODEL_ID);
+      b.vint(2, PRIMITIVE_MODEL_IDS[dec.kind] ?? TRIANGLE_MODEL_ID);
       b.vint(3, 1);
       // --- field 4 components ---
       b.msg(4, (c) => { c.vint(1, 1); c.msg(11, (m) => m.str(1, dec.name)); });
@@ -253,11 +264,11 @@ function splitIntoModels(name, decorations, maxPerModel = 999, position) {
 
 return { buildGia, splitIntoModels, W, packedVarints,
   OBJECT_TEMPLATE_ID, TRIANGLE_MODEL_ID, LEGACY_TRIANGLE_MODEL_ID,
-  SQUARE_MODEL_ID, OBJ_GUID_BASE, DEC_GUID_BASE,
+  SQUARE_MODEL_ID, PRIMITIVE_MODEL_IDS, OBJ_GUID_BASE, DEC_GUID_BASE,
   MAX_DECORATIONS_PER_MODEL: 999 };
 })();
 
 export const { buildGia, splitIntoModels, MAX_DECORATIONS_PER_MODEL,
   TRIANGLE_MODEL_ID, LEGACY_TRIANGLE_MODEL_ID, SQUARE_MODEL_ID,
-  DEC_GUID_BASE } = GIA;
+  PRIMITIVE_MODEL_IDS, DEC_GUID_BASE } = GIA;
 export default GIA;

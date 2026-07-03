@@ -25,6 +25,10 @@ import { pairIntoSquares, squarePlacement } from './squares.js';
 import { coalesceSquares } from './coalesce.js';
 import { decimateTriangles } from './decimate.js';
 import { spriteToBoxes } from './sprite.js';
+import { voxelizeTriangles } from './voxelize.js';
+import { marchingCubesSurface } from './marchingcubes.js';
+import { pixelPerfect } from './pixelperfect.js';
+import { capPlacements, MAX_ZOOM } from './cap.js';
 
 export const DEFAULT_PARAMS = {
   unitScale: 1,          // multiply source units to get meters
@@ -41,11 +45,24 @@ export const DEFAULT_PARAMS = {
   eulerOrder: 'YXZ',     // rotation decomposition order (engine convention)
   minTriangleArea: 1e-8, // m^2, drop degenerates
   center: true,          // recenter model on origin (XZ) and rest on Y=0
-  primitiveMode: 'triangles', // 'triangles' | 'squares' | 'both'
+  mode: 'direct',        // 'direct' | 'voxel' | 'pixel' | 'fit'
+  primitiveMode: 'triangles', // direct mode: 'triangles' | 'both'
   decimate: 0,           // 0..1 vertex-clustering decimation strength
   alphaCutoff: 0.5,      // texture regions with max alpha below this are skipped
   pivot: null,           // {x,y,z} source-space pivot moved to the origin (m)
   rotateDeg: null,       // {x,y,z} source-space pre-rotation (degrees, YXZ)
+  // --- voxel mode ---
+  voxelRes: 48,          // voxels across the largest dimension
+  voxelSize: null,       // explicit voxel size (m); overrides voxelRes
+  voxelColorTolerance: null, // color merge for voxels (null -> colorTolerance)
+  voxelSurface: 'boxes', // 'boxes' | 'mc' (SDF + marching cubes)
+  sdfIso: 0,             // iso offset in voxel units (+ inflates, - erodes)
+  sdfSmooth: 1,          // SDF smoothing passes (0..4)
+  // --- pixel-perfect mode ---
+  pixelTolerance: 0,     // texel color merge (0 = only exactly equal colors)
+  pixelOverdraw: true,   // background square per face + layered differences
+                         // (0.001 m normal offset) to cut decoration count
+  maxTexelsPerFace: 16384,
 };
 
 // Presets for the fidelity/count trade-off.
@@ -134,7 +151,7 @@ export const TRI_SCALE_Z_PER_M = 3.704;
 
 export function placementToDecoration(pl, params) {
   let rot = pl.rotation;
-  if (pl.kind !== 'square') {
+  if (!pl.kind || pl.kind === 'triangle') {
     // Internal placements put legs on local +Y/+Z. The v2 model's second leg
     // points along local -Z, so right-multiply by Ry(180) = diag(-1,1,-1):
     // columns become (-n, u, -w). (The canonical sample encodes exactly this
@@ -156,7 +173,7 @@ export function placementToDecoration(pl, params) {
     return d;
   };
   const base = {
-    kind: pl.kind === 'square' ? 'square' : 'triangle',
+    kind: pl.kind ?? 'triangle',
     position: {
       x: round6(pl.position.x * 10),
       y: round6(pl.position.y * 10),
@@ -165,21 +182,49 @@ export function placementToDecoration(pl, params) {
     rotationDeg: { x: clean(euler.x), y: clean(euler.y), z: clean(euler.z) },
     color: colorToRgbInt(pl.color),
   };
-  if (base.kind === 'square') {
-    // canonical square: a unit cube, 0.1 m per axis at scale 1 (thin uses of
-    // it set Y to thinScale; volumetric uses set fullY with a real extent)
-    base.scale = {
-      x: round6(pl.scale.x * 10),
-      y: pl.fullY ? round6(pl.scale.y * 10) : params.thinScale,
-      z: round6(pl.scale.z * 10),
-    };
-  } else {
-    // v2 triangle: legs 1/7.7 m (+Y) and 1/3.704 m (-Z) at scale 1
-    base.scale = {
-      x: params.thinScale,
-      y: round6(pl.scale.y * TRI_SCALE_Y_PER_M),
-      z: round6(pl.scale.z * TRI_SCALE_Z_PER_M),
-    };
+  switch (base.kind) {
+    case 'square':
+      // canonical square: a unit cube, 0.1 m per axis at scale 1 (thin uses
+      // set Y to thinScale; volumetric uses set fullY with a real extent)
+      base.scale = {
+        x: round6(pl.scale.x * 10),
+        y: pl.fullY ? round6(pl.scale.y * 10) : params.thinScale,
+        z: round6(pl.scale.z * 10),
+      };
+      break;
+    case 'plane':
+      // 1×1 m on local XZ at scale 10; sample uses y scale 1
+      base.scale = { x: round6(pl.scale.x * 10), y: 1, z: round6(pl.scale.z * 10) };
+      break;
+    case 'sphere':
+      // 1 m diameter at scale 10 (pl.scale = diameters in m)
+      base.scale = {
+        x: round6(pl.scale.x * 10), y: round6(pl.scale.y * 10), z: round6(pl.scale.z * 10),
+      };
+      break;
+    case 'cylinder':
+    case 'cone':
+      // 1 m diameter × 1 m height at scale 10 (pl.scale = {diaX, height, diaZ})
+      base.scale = {
+        x: round6(pl.scale.x * 10), y: round6(pl.scale.y * 10), z: round6(pl.scale.z * 10),
+      };
+      break;
+    case 'prism':
+      // equilateral cross-section, 0.75 m side and 1 m height at scale 10
+      // (pl.scale = {side, height, side} in m)
+      base.scale = {
+        x: round6(pl.scale.x / 0.075),
+        y: round6(pl.scale.y * 10),
+        z: round6(pl.scale.z / 0.075),
+      };
+      break;
+    default:
+      // v2 triangle: legs 1/7.7 m (+Y) and 1/3.704 m (-Z) at scale 1
+      base.scale = {
+        x: params.thinScale,
+        y: round6(pl.scale.y * TRI_SCALE_Y_PER_M),
+        z: round6(pl.scale.z * TRI_SCALE_Z_PER_M),
+      };
   }
   return base;
 }
@@ -240,29 +285,159 @@ export function convert(input, userParams = {}) {
     // decoration. Skips the triangle pipeline entirely.
     return convertSpriteBoxes(sprite, params, stats, { userR, userXform, hasPivot });
   }
-  {
-    let raw = [];
-    for (const mesh of meshes) {
-      for (const tri of iterateTriangles(mesh)) {
-        stats.sourceTriangles++;
-        let p = tri.p;
-        if (mesh.matrixWorld) p = p.map((q) => applyMatrix(q, mesh.matrixWorld));
-        if (params.unitScale !== 1) p = p.map((q) => mul(q, params.unitScale));
-        p = p.map(userXform);
-        const f = flipTri(p, tri.uv);
-        if (triangleArea(f.p[0], f.p[1], f.p[2]) < params.minTriangleArea) {
-          stats.degenerate++;
-          continue;
-        }
-        raw.push({ p: f.p, uv: f.uv, mesh });
+
+  let raw = [];
+  for (const mesh of meshes) {
+    for (const tri of iterateTriangles(mesh)) {
+      stats.sourceTriangles++;
+      let p = tri.p;
+      if (mesh.matrixWorld) p = p.map((q) => applyMatrix(q, mesh.matrixWorld));
+      if (params.unitScale !== 1) p = p.map((q) => mul(q, params.unitScale));
+      p = p.map(userXform);
+      const f = flipTri(p, tri.uv);
+      if (triangleArea(f.p[0], f.p[1], f.p[2]) < params.minTriangleArea) {
+        stats.degenerate++;
+        continue;
+      }
+      raw.push({ p: f.p, uv: f.uv, mesh });
+    }
+  }
+
+  // 2. optional decimation (before color sampling; preserves UVs)
+  if (params.decimate > 0) raw = decimateTriangles(raw, params.decimate);
+  stats.afterDecimation = raw.length;
+
+  // --- VOXEL MODE: rasterize raw triangles (texture-accurate per-voxel
+  // colors) into boxes, OR reconstruct the SDF zero level set with marching
+  // cubes and continue through the squares/right-triangle pipeline ---
+  let skipColoring = false;
+  if (params.mode === 'voxel') {
+    let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;
+    for (const t of raw) for (const q of t.p) {
+      minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x);
+      minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y);
+      minZ = Math.min(minZ, q.z); maxZ = Math.max(maxZ, q.z);
+    }
+    const maxDim = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 1e-6);
+    const vs = params.voxelSize ?? maxDim / Math.max(2, params.voxelRes);
+    if (params.voxelSurface === 'mc') {
+      // standard marching cubes directly on the voxel occupancy; the
+      // resulting colored triangles continue through the pairing pipeline
+      const res = marchingCubesSurface(raw, {
+        voxelSize: vs,
+        isoOffset: params.sdfIso,
+        smooth: params.sdfSmooth,
+        alphaCutoff: params.alphaCutoff,
+      });
+      stats.voxels = res.voxels;
+      stats.sdfCells = res.cells;
+      stats.voxelSize = Math.round(vs * 1e4) / 1e4;
+      colored.push(...res.tris);
+      stats.afterSubdivision = colored.length;
+      skipColoring = true;
+    } else {
+      const { boxes, voxels, clusters, culled } = voxelizeTriangles(raw, {
+        voxelSize: vs,
+        colorTolerance: params.voxelColorTolerance ?? params.colorTolerance,
+        maxBoxEdge: MAX_ZOOM / 10,
+        alphaCutoff: params.alphaCutoff,
+      });
+      stats.voxels = voxels;
+      stats.voxelsCulled = culled;
+      stats.voxelSize = Math.round(vs * 1e4) / 1e4;
+      stats.uniqueColors = clusters;
+      stats.afterSubdivision = voxels;
+      stats.afterMerge = boxes.length;
+      let placements = boxes.map((b) => ({
+        kind: 'square',
+        fullY: true,
+        position: v3(b.center.x, b.center.y, b.center.z),
+        rotation: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        scale: v3(b.size.x, b.size.y, b.size.z),
+        color: b.color,
+        area: Math.max(b.size.x * b.size.y, b.size.x * b.size.z, b.size.y * b.size.z),
+      }));
+      recenterPlacements(placements, params, stats);
+      return finishPlacements(placements, params, stats);
+    }
+  }
+
+  // --- PIXEL PERFECT MODE: exact per-texel squares on rectangular faces,
+  // greedy-merged where colors are identical (within pixelTolerance) ---
+  if (params.mode === 'pixel') {
+    const pp = pixelPerfect(raw, {
+      alphaCutoff: params.alphaCutoff,
+      mergeTolerance: params.pixelTolerance,
+      maxTexelsPerFace: params.maxTexelsPerFace,
+      overdraw: params.pixelOverdraw,
+      weldEps: params.weldEps,
+    });
+    stats.texels = pp.texels;
+    stats.transparentSkipped = pp.transparent;
+    let placements = pp.placements;
+    // non-rectangular remainder: near-exact colors via deep subdivision
+    const local = {
+      ...params,
+      colorTolerance: Math.max(2, params.pixelTolerance),
+      subdivideThreshold: Math.max(2, params.pixelTolerance),
+      maxSubdiv: Math.max(params.maxSubdiv, 4),
+    };
+    const restColored = [];
+    for (const t of pp.rest) {
+      subdivideForColor(t, t.mesh, local, 0, restColored, budget, stats);
+    }
+    stats.afterSubdivision = placements.length + restColored.length;
+    // recenter placements and remaining triangles together
+    if (params.center) {
+      let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;
+      for (const p of placements) {
+        const R = p.rotation, h = [p.scale.x / 2, 0.001, p.scale.z / 2];
+        const ext = [0, 1, 2].map((i) =>
+          Math.abs(R[i][0]) * h[0] + Math.abs(R[i][1]) * h[1] + Math.abs(R[i][2]) * h[2]);
+        minX = Math.min(minX, p.position.x - ext[0]); maxX = Math.max(maxX, p.position.x + ext[0]);
+        minY = Math.min(minY, p.position.y - ext[1]); maxY = Math.max(maxY, p.position.y + ext[1]);
+        minZ = Math.min(minZ, p.position.z - ext[2]); maxZ = Math.max(maxZ, p.position.z + ext[2]);
+      }
+      for (const t of restColored) for (const q of t.p) {
+        minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x);
+        minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y);
+        minZ = Math.min(minZ, q.z); maxZ = Math.max(maxZ, q.z);
+      }
+      if (placements.length + restColored.length) {
+        const off = v3(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
+        for (const p of placements) p.position = add(p.position, off);
+        for (const t of restColored) t.p = t.p.map((q) => add(q, off));
+        stats.bounds = { x: round6(maxX - minX), y: round6(maxY - minY), z: round6(maxZ - minZ) };
+        stats.centerOffset = { x: off.x, y: off.y, z: off.z };
       }
     }
+    // remaining triangles: pair what forms rectangles, decompose the rest
+    const canonicalPx = { ...DEFAULT_CANONICAL, thinScale: params.thinScale };
+    const p0 = pairIntoSquares(restColored, {
+      snapDeg: params.snapDeg,
+      colorTolerance: local.colorTolerance,
+      weldEps: params.weldEps,
+      planarAngleDeg: params.planarAngleDeg,
+    });
+    placements.push(...p0.squares);
+    for (const t of p0.rest) {
+      for (const pl of decomposeTriangle(t.p[0], t.p[1], t.p[2], { snapDeg: params.snapDeg, canonical: canonicalPx })) {
+        pl.color = t.color;
+        pl.kind = 'triangle';
+        pl.area = pl.scale.y * pl.scale.z / 2;
+        placements.push(pl);
+      }
+    }
+    // coalesce same-color equal-size squares across adjacent faces
+    const sq = placements.filter((p) => p.kind === 'square');
+    const nonSq = placements.filter((p) => p.kind !== 'square');
+    placements = [...coalesceSquares(sq), ...nonSq];
+    stats.afterMerge = placements.length;
+    return finishPlacements(placements, params, stats);
+  }
 
-    // 2. optional decimation (before color sampling; preserves UVs)
-    if (params.decimate > 0) raw = decimateTriangles(raw, params.decimate);
-    stats.afterDecimation = raw.length;
-
-    // 3. color sampling + texture subdivision + alpha skipping
+  // 3. color sampling + texture subdivision + alpha skipping
+  if (!skipColoring) {
     for (const t of raw) {
       subdivideForColor(t, t.mesh, params, 0, colored, budget, stats);
     }
@@ -304,10 +479,14 @@ export function convert(input, userParams = {}) {
   let placements = [];
   let leftovers;
 
-  if (params.primitiveMode === 'squares' || params.primitiveMode === 'both') {
+  const workColored = colored;
+  // marching-cubes output pairs into squares + right triangles
+  const effectiveMode = params.mode === 'voxel' ? 'both' : params.primitiveMode;
+
+  if (effectiveMode === 'squares' || effectiveMode === 'both') {
     // pass 1: pair rectangles in the raw colored soup FIRST — texel grids
     // from subdivision pair exactly, before merging distorts them
-    const p0 = pairIntoSquares(colored, pairOpts);
+    const p0 = pairIntoSquares(workColored, pairOpts);
     const squares = [...p0.squares];
     // pass 2: merge the unpaired remainder, then pair again
     const mergedRest = doMerge(p0.rest);
@@ -330,11 +509,11 @@ export function convert(input, userParams = {}) {
     leftovers = p2.rest;
     // pass 4: greedy-coalesce equal-size aligned squares into maximal
     // rectangles (voxel/texel grids collapse dramatically)
-    placements = coalesceSquares(squares);
+    placements = [...placements, ...coalesceSquares(squares)];
     stats.afterMerge = placements.length + leftovers.length;
   } else {
-    const merged = doMerge(colored);
-    stats.afterMerge = merged.length;
+    const merged = doMerge(workColored);
+    stats.afterMerge = merged.length + placements.length;
     leftovers = merged;
   }
 
@@ -365,20 +544,92 @@ export function convert(input, userParams = {}) {
     }
   }
 
-  // 7. budget enforcement: drop smallest first
+  return finishPlacements(placements, params, stats);
+}
+
+// ---------- shared tail: scale cap -> budget -> stats -> decorations ----------
+
+function recenterPlacements(placements, params, stats) {
+  if (!params.center || !placements.length) return;
+  let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;
+  for (const p of placements) {
+    const R = p.rotation;
+    const h = [p.scale.x / 2, p.scale.y / 2, p.scale.z / 2];
+    const ext = [0, 1, 2].map((i) =>
+      Math.abs(R[i][0]) * h[0] + Math.abs(R[i][1]) * h[1] + Math.abs(R[i][2]) * h[2]);
+    minX = Math.min(minX, p.position.x - ext[0]); maxX = Math.max(maxX, p.position.x + ext[0]);
+    minY = Math.min(minY, p.position.y - ext[1]); maxY = Math.max(maxY, p.position.y + ext[1]);
+    minZ = Math.min(minZ, p.position.z - ext[2]); maxZ = Math.max(maxZ, p.position.z + ext[2]);
+  }
+  const off = v3(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
+  for (const p of placements) p.position = add(p.position, off);
+  stats.bounds = {
+    x: round6(maxX - minX), y: round6(maxY - minY), z: round6(maxZ - minZ),
+  };
+  stats.centerOffset = { x: off.x, y: off.y, z: off.z };
+}
+
+function finishPlacements(placements, params, stats) {
+  // no decoration may exceed zoom 50 on any axis: split oversized pieces
+  const before = placements.length;
+  placements = capPlacements(placements);
+  if (placements.length !== before) stats.capSplit = placements.length - before;
+
+  // consistent surface-area estimate for every placement (drop ordering and
+  // budget decisions must never compare undefined areas)
+  const areaOf = (p) => {
+    switch (p.kind) {
+      case 'square':
+      case 'plane':
+        return Math.max(
+          p.scale.x * p.scale.z,
+          p.scale.x * (p.fullY ? p.scale.y : 0),
+          (p.fullY ? p.scale.y : 0) * p.scale.z,
+        );
+      case 'sphere': case 'cylinder': case 'cone': case 'prism':
+        return Math.max(p.scale.x * p.scale.y, p.scale.x * p.scale.z, p.scale.y * p.scale.z);
+      default:
+        return p.scale.y * p.scale.z / 2; // triangle legs
+    }
+  };
+  for (const p of placements) p.area = areaOf(p);
+
+  // over budget? merge adjacent same-plane squares with progressively more
+  // generous color tolerance before resorting to dropping anything
   if (placements.length > params.maxDecorations) {
-    placements.sort((a, b) => b.area - a.area);
+    let mergeTol = 12;
+    while (placements.length > params.maxDecorations && mergeTol <= 100) {
+      const sq = placements.filter((p) => p.kind === 'square');
+      if (sq.length < 2) break;
+      const rest = placements.filter((p) => p.kind !== 'square');
+      const merged = coalesceSquares(sq, { colorTolerance: mergeTol });
+      if (merged.length < sq.length) {
+        stats.budgetMerged = (stats.budgetMerged ?? 0) + (sq.length - merged.length);
+        placements = [...merged, ...rest];
+        for (const p of placements) if (p.area == null) p.area = areaOf(p);
+      }
+      mergeTol *= 2;
+    }
+  }
+
+  if (placements.length > params.maxDecorations) {
+    placements.sort((a, b) => (b.area ?? 0) - (a.area ?? 0));
     stats.dropped = placements.length - params.maxDecorations;
     placements = placements.slice(0, params.maxDecorations);
   }
   stats.placements = placements.length;
-  stats.squares = placements.filter((p) => p.kind === 'square').length;
-  stats.triangles = placements.length - stats.squares;
-  stats.uniqueColors = new Set(placements.map((p) => colorToRgbInt(p.color))).size;
-
-  // 8. decoration records
+  const byKind = {};
+  for (const p of placements) {
+    const k = p.kind ?? 'triangle';
+    byKind[k] = (byKind[k] ?? 0) + 1;
+  }
+  stats.byKind = byKind;
+  stats.squares = byKind.square ?? 0;
+  stats.triangles = byKind.triangle ?? 0;
+  if (!stats.uniqueColors) {
+    stats.uniqueColors = new Set(placements.map((p) => colorToRgbInt(p.color))).size;
+  }
   const decorations = placements.map((pl) => placementToDecoration(pl, params));
-
   return { placements, decorations, stats, params };
 }
 
@@ -437,16 +688,5 @@ function convertSpriteBoxes(sprite, params, stats, ctx) {
     stats.centerOffset = { x: off.x, y: off.y, z: off.z };
   }
 
-  if (placements.length > params.maxDecorations) {
-    placements.sort((a, b) => b.area - a.area);
-    stats.dropped = placements.length - params.maxDecorations;
-    placements = placements.slice(0, params.maxDecorations);
-  }
-  stats.placements = placements.length;
-  stats.squares = placements.length;
-  stats.triangles = 0;
-  stats.uniqueColors = new Set(placements.map((p) => colorToRgbInt(p.color))).size;
-
-  const decorations = placements.map((pl) => placementToDecoration(pl, params));
-  return { placements, decorations, stats, params };
+  return finishPlacements(placements, params, stats);
 }

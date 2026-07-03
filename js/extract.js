@@ -73,12 +73,16 @@ function materialInfo(mat, cache) {
   return info;
 }
 
-// Returns { meshes: SourceMesh[], triangleCount, meshCount }
+// Returns { meshes: SourceMesh[], triangleCount, meshCount,
+//           textures: [{ texture, material }] }  — textures pair each
+// extracted pixel buffer with the three.js material that uses it, so the
+// app can sync texture edits back onto the viewport model.
 export function extractMeshes(root) {
   root.updateMatrixWorld(true);
   const out = [];
   let triangleCount = 0;
   const matCache = new Map();
+  const textures = [];
 
   root.traverse((node) => {
     if (!node.isMesh || !node.geometry) return;
@@ -93,7 +97,9 @@ export function extractMeshes(root) {
 
     for (const g of groups) {
       const mat = Array.isArray(node.material) ? node.material[g.materialIndex] : node.material;
+      const cached = matCache.has(mat);
       const { color, texture } = materialInfo(mat, matCache);
+      if (!cached && texture) textures.push({ texture, material: mat });
       let indices;
       const end = Math.min(g.start + g.count, index ? index.count : posAttr.count);
       if (index) {
@@ -114,5 +120,5 @@ export function extractMeshes(root) {
       });
     }
   });
-  return { meshes: out, triangleCount, meshCount: out.length };
+  return { meshes: out, triangleCount, meshCount: out.length, textures };
 }

@@ -6,6 +6,30 @@ body {
   margin: 0;
   height: 100%;
 }
+
+/* themed scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a4150 #1b1e24;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: #1b1e24;
+}
+*::-webkit-scrollbar-thumb {
+  background: #3a4150;
+  border-radius: 5px;
+  border: 2px solid #1b1e24;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #4a5568;
+}
+*::-webkit-scrollbar-corner {
+  background: #1b1e24;
+}
 body {
   font-family: "Segoe UI", system-ui, sans-serif;
   background: #14161a;
@@ -20,13 +44,35 @@ body {
 #sidebar {
   width: 320px;
   min-width: 320px;
-  overflow-y: auto;
   background: #1b1e24;
   border-right: 1px solid #2a2e36;
-  padding: 14px;
+  padding: 14px 14px 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.sidebar-scroll {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 -6px;
+  padding: 0 6px;
+}
+#action-bar {
+  position: sticky;
+  bottom: 0;
+  background: #1b1e24;
+  border-top: 1px solid #2a2e36;
+  padding: 10px 0 12px;
+  margin-top: auto;
+}
+#action-bar #btn-generate {
+  margin: 0;
+  padding: 13px;
+  font-size: 15px;
+  letter-spacing: 0.5px;
 }
 #sidebar h1 {
   font-size: 18px;
@@ -95,6 +141,7 @@ body {
 .row input[type="range"] {
   flex: 1;
   max-width: 130px;
+  min-width: 0;
 }
 .row input[type="number"] {
   width: 90px;
@@ -103,6 +150,16 @@ body {
   border: 1px solid #3a4150;
   border-radius: 4px;
   padding: 4px 6px;
+}
+/* rows combining a slider + number input (e.g. voxel resolution) must not
+   overflow the sidebar */
+.row:has(input[type="range"]):has(input[type="number"]) input[type="range"] {
+  max-width: 90px;
+}
+.row:has(input[type="range"]):has(input[type="number"]) input[type="number"] {
+  width: 60px;
+  padding: 4px 4px;
+  flex-shrink: 0;
 }
 .row select {
   background: #14161a;
@@ -147,6 +204,50 @@ details summary {
   color: #6b7482;
   margin-top: 4px;
 }
+
+#tx-canvas {
+  width: 100%;
+  image-rendering: pixelated;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  background:
+    repeating-conic-gradient(#23262d 0 25%, #1b1e24 0 50%) 0 0/16px 16px;
+  touch-action: none;
+}
+#tx-select { width: 100%; margin-bottom: 6px; background: #14161a; color: #d8dbe0; border: 1px solid #3a4150; border-radius: 4px; padding: 4px 6px; }
+
+.mode-group {
+  border-left: 2px solid #2d6cdf55;
+  padding-left: 8px;
+  margin: 6px 0 10px;
+}
+
+.row-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: #d8dbe0;
+  cursor: help;
+}
+.row-checks label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+#recon-list { margin-top: 8px; font-size: 12px; }
+#recon-list .recon-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid #262a32;
+}
+#recon-list .recon-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#recon-list .recon-count { color: #6b7482; white-space: nowrap; }
+#recon-list .recon-del {
+  background: none; border: none; color: #6b7482;
+  cursor: pointer; width: auto; padding: 0 4px; margin: 0; font-size: 13px;
+}
+#recon-list .recon-del:hover { color: #f0b429; }
 
 button {
   width: 100%;
@@ -430,6 +531,14 @@ button.small {
   border-radius: 3px;
   border: 1px solid #3a4150;
   vertical-align: -2px;
+}
+
+#marquee {
+  position: fixed;
+  border: 1px solid #7ec8ff;
+  background: rgba(126, 200, 255, 0.12);
+  pointer-events: none;
+  z-index: 60;
 }
 
 #toast {
