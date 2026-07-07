@@ -86,12 +86,15 @@ export function renderShell(root, {
     <details class="panel" open>
       <summary>3. Parameters</summary>
 
-      <label class="row" title="Simplifies the source mesh before conversion by snapping vertices to a grid — use on high-poly models to cut primitive count and speed things up. 0 = off, higher = coarser">
+      <div class="hint2" id="sprite-param-note" hidden>3D sprite mode — only the
+        settings that affect the sprite output are shown.</div>
+
+      <label class="row" id="row-decimate" title="Simplifies the source mesh before conversion by snapping vertices to a grid — use on high-poly models to cut primitive count and speed things up. 0 = off, higher = coarser">
         <span>Decimation <em id="v-decimate">off</em></span>
         <input type="range" id="p-decimate" min="0" max="90" value="0" step="5">
       </label>
 
-      <label class="row" title="Show the decimated mesh in the viewport while adjusting the slider (the original model is restored when disabled)">
+      <label class="row" id="row-prevdec" title="Show the decimated mesh in the viewport while adjusting the slider (the original model is restored when disabled)">
         <span>Preview decimation</span>
         <input type="checkbox" id="p-prevdec">
       </label>
@@ -101,7 +104,7 @@ export function renderShell(root, {
         <input type="number" id="p-max" value="4995" min="1" max="99900" step="1">
       </label>
 
-      <label class="row" title="Reconstruction mode: Direct converts mesh faces as-is; Voxel rebuilds from colored voxels (boxes or a marching-cubes surface); Pixel Perfect reproduces voxel-style models exactly, per texture pixel">
+      <label class="row" id="row-mode" title="Reconstruction mode: Direct converts mesh faces as-is; Voxel rebuilds from colored voxels (boxes or a marching-cubes surface); Pixel Perfect reproduces voxel-style models exactly, per texture pixel">
         <span>Mode</span>
         <select id="p-mode">
           <option value="direct" selected>Direct</option>
@@ -193,9 +196,9 @@ export function renderShell(root, {
           squares.</div>
       </div>
 
-      <details>
+      <details id="adv-params">
         <summary>Advanced</summary>
-        <label class="row" title="Scale of each primitive's thin axis — how thick the generated triangles/squares are (0.01 ≈ paper thin)">
+        <label class="row" id="row-thin" title="Scale of each primitive's thin axis — how thick the generated triangles/squares are (0.01 ≈ paper thin)">
           <span>Thickness scale</span>
           <input type="number" id="p-thin" value="0.01" min="0.01" max="10" step="0.05">
         </label>
@@ -210,7 +213,7 @@ export function renderShell(root, {
             <option value="XYZ">XYZ</option>
           </select>
         </label>
-        <label class="row" title="Texture areas with alpha below this value (0–1) produce no geometry; fully transparent pixels are always skipped">
+        <label class="row" id="row-alpha" title="Texture areas with alpha below this value (0–1) produce no geometry; fully transparent pixels are always skipped">
           <span>Alpha cutoff</span>
           <input type="number" id="p-alpha" value="0.5" min="0" max="1" step="0.05">
         </label>

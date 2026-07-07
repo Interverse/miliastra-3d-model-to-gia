@@ -369,10 +369,29 @@ export function initApp({ mode = "gia" } = {}) {
     return { width: w, height: h, data: cx.getImageData(0, 0, w, h).data };
   }
 
+  // Sprite conversion bypasses the mesh pipeline: mode, decimation, the
+  // direct/voxel/pixel groups, and thickness scale (sprite boxes are
+  // volumetric) have no effect. Only max decorations, flip Z, euler order,
+  // and alpha cutoff remain relevant — hide everything else. Alpha cutoff
+  // is a primary sprite control, so it is lifted out of Advanced.
+  function setSpriteParamsUI(on) {
+    $("sprite-param-note").hidden = !on;
+    for (const id of ["row-decimate", "row-prevdec", "row-mode", "row-thin"]) {
+      $(id).hidden = on;
+    }
+    const m = $("p-mode").value;
+    $("direct-params").hidden = on || m !== "direct";
+    $("voxel-params").hidden = on || m !== "voxel";
+    $("pixel-params").hidden = on || m !== "pixel";
+    if (on) $("adv-params").before($("row-alpha"));
+    else $("adv-params").append($("row-alpha")); // restore as last Advanced row
+  }
+
   function exitSpriteMode() {
     spriteImageName = null;
     spritePixels = null;
     $("sprite-params").hidden = true;
+    setSpriteParamsUI(false);
   }
 
   $("btn-sprite").addEventListener("click", async () => {
@@ -385,6 +404,7 @@ export function initApp({ mode = "gia" } = {}) {
       spriteImageName = name;
       currentName = file.name.replace(/\.[^.]+$/, "");
       $("sprite-params").hidden = false;
+      setSpriteParamsUI(true);
       $("btn-generate").disabled = false;
       clearReconstructions();
       texPanel.setTextures([]);
@@ -666,9 +686,10 @@ export function initApp({ mode = "gia" } = {}) {
   // show only the parameter group for the selected mode
   $("p-mode").addEventListener("change", () => {
     const m = $("p-mode").value;
-    $("direct-params").hidden = m !== "direct";
-    $("voxel-params").hidden = m !== "voxel";
-    $("pixel-params").hidden = m !== "pixel";
+    const sprite = !!spriteImageName;
+    $("direct-params").hidden = sprite || m !== "direct";
+    $("voxel-params").hidden = sprite || m !== "voxel";
+    $("pixel-params").hidden = sprite || m !== "pixel";
   });
   $("p-voxsurf").addEventListener("change", () => {
     $("sdf-params").hidden = $("p-voxsurf").value !== "mc";
