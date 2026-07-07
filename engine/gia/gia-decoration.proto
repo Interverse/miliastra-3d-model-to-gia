@@ -25,13 +25,16 @@ message Locator { // trimmed ResourceLocator
 }
 
 message DecorationResourceEntry {
-  Locator          identity       = 1;
-  repeated Locator reference_list = 2;  // object -> its decoration guids
+  Locator          identity       = 1;  // node graphs use {2:5, 4:guid} (no kind)
+  repeated Locator reference_list = 2;  // object -> its decoration guids; the
+                                        // main auto-assemble object also lists
+                                        // its node graph {2:5, 4:graph_guid} last
   string           internal_name  = 3;
-  int32            resource_class = 5;  // 1 = OBJECT, 28 = DECORATION
+  int32            resource_class = 5;  // 1 = OBJECT, 28 = DECORATION, 9 = NODE GRAPH
 
   // payload oneof (completes ResourceEntry.payload):
   PrefabDefinition     prefab     = 11;  // when resource_class = 1
+  NodeGraphDefinition  node_graph = 13;  // when resource_class = 9
   DecorationDefinition decoration = 21;  // when resource_class = 28
 }
 
@@ -44,7 +47,111 @@ message PrefabBody {
   int64 template_id = 2;              // 10005018 = "MPActionGroup" group
   repeated Component logic_components  = 6;
   repeated Component entity_components = 7;
+  repeated DeviceComponent devices     = 8;  // DYNAMIC unit prefabs only
   int32 tail_marker = 10;             // always 1
+}
+
+// ---------------- Devices (dynamic unit prefabs) ----------------
+// Static prefabs have no field-8 entries and set NameBody.flag = 1.
+// Dynamic prefabs omit NameBody.flag and carry the default device set
+// 18, 1, 3, 19, 6, 14 (in that order); a Follow Motion Device (type 9)
+// is appended to objects that should follow another entity.
+// Envelope mirrors Component: body field number = type_id + 10.
+
+message DeviceComponent {
+  int32 type_id = 1;
+  int32 enabled = 2;                  // always 1
+  EffectDeviceBody effects = 28;      // type 18: hit/knockdown effects
+  bytes empty_11 = 11;                // type 1
+  bytes empty_13 = 13;                // type 3
+  bytes empty_29 = 29;                // type 19
+  bytes empty_16 = 16;                // type 6
+  bytes empty_24 = 24;                // type 14
+  FollowDeviceBody follow = 19;       // type 9: Follow Motion Device
+}
+
+message EffectDeviceBody {
+  EffectSlot hit       = 9;   // 503 = "Hit Effect"
+  EffectSlot knockdown = 10;  // 503 = "Knockdown Effect"
+  string     node      = 11;  // "GI_RootNode"
+}
+message EffectSlot {
+  int32 i3 = 3; int32 i4 = 4;         // both 1
+  bytes e5 = 5; bytes e6 = 6;         // empty
+  float f7 = 7;                       // 1.0
+  bytes e8 = 8; bytes e10 = 10;       // empty
+  int32 i11 = 11;                     // 1
+  string label = 503;
+  int32 i507 = 507;                   // 13
+}
+
+message FollowDeviceBody {
+  string node   = 2;                  // "GI_RootNode"
+  Vec3f  factor = 3;                  // {x:1, z:1}
+  bytes  e4     = 4;                  // empty
+  int32  speed1 = 5;                  // 1200
+  int32  speed2 = 6;                  // 1100
+  FollowTarget target = 7;            // {11: {}} = no fixed target
+  string mode   = 502;                // "Completely Follow"
+  message FollowTarget { bytes none = 11; }
+}
+
+// ---------------- Node graph (resource_class 9) ----------------
+// Payload of entry field 13. Discovered from the Auto-Assemble samples:
+// a canvas of typed nodes; links live on the DOWNSTREAM pin and reference
+// {remote node id, remote pin id}. Observed node type ids:
+//   71  = When Entity Is Created (event; exec-out pin {1:2})
+//   73  = Self Entity (no pins stored; data output pin {1:4})
+//   99  = entity transform getter (in {1:3} <- 73; outputs {1:4}, {1:4,2:1})
+//   252 = Create Prefab (prefab-id param pin {1:3}, dtype 21)
+//   668 = Switch Follow Motion Device Target by Entity
+// Exec chain: 71 -> 252 -> 668 -> 252 -> 668 -> ... (pin {1:2} -> pin {1:1})
+
+message NodeGraphDefinition { GraphContainer c = 1;
+  message GraphContainer { NodeGraph graph = 1; } }
+
+message NodeGraph {
+  GraphHeader header = 1;   // {1:10000, 2:20000, 3:21001, 5:graph_guid}
+  string      name   = 2;
+  repeated GraphNode nodes = 3;
+}
+message GraphHeader { int32 a = 1; int32 b = 2; int32 c = 3; int64 guid = 5; }
+
+message GraphNode {
+  int32 node_id = 1;        // unique within the graph (gaps allowed)
+  NodeType type  = 2;       // {1:10001, 2:20000, 3:22000, 5:type_id}
+  NodeType type2 = 3;       // identical copy
+  repeated GraphPin pins = 4; // only pins with a value and/or a link
+  float x = 5;              // canvas position
+  float y = 6;
+}
+message NodeType { int32 a = 1; int32 b = 2; int32 c = 3; int32 type_id = 5; }
+
+message GraphPin {
+  PinId id  = 1;
+  PinId id2 = 2;            // usually identical to id
+  PinValue value = 3;       // inline parameter value (optional)
+  int32 data_type = 4;      // 21 prefab, 12 entity, 6 string, 14 int, 1/4 misc
+  PinLink link = 5;         // connection (optional)
+}
+message PinId { int32 group = 1; int32 index = 2; } // {1:1} exec-in, {1:2}
+                                                    // exec-out, {1:3[,2:k]}
+                                                    // params, {1:4[,2:k]} outs
+message PinLink { int32 remote_node = 1; PinId remote_pin = 2; PinId remote_pin2 = 3; }
+
+message PinValue {
+  int32 value_class = 1;    // 1 prefab, 5 string, 6 int, 7 entity
+  int32 flag = 2;           // 1
+  TypeTag tag = 4;          // {1:1, 100:{1:data_type}}
+  PrefabRef prefab = 101;   // value_class 1: {1: prefab guid}
+  StringRef str   = 105;    // value_class 5: {1: string}
+  IntRef    num   = 106;    // value_class 6: {1: int} (may be empty)
+  EntityRef ent   = 107;    // value_class 7: {1: {}} = unset
+  message TypeTag { int32 one = 1; Inner d = 100; message Inner { int32 t = 1; } }
+  message PrefabRef { int64 guid = 1; }
+  message StringRef { string v = 1; }
+  message IntRef    { int64 v = 1; }
+  message EntityRef { bytes none = 1; }
 }
 
 // ---------------- DECORATION payload ----------------
@@ -69,9 +176,12 @@ message Component {
 
   // type 1 on objects/decorations: display name
   NameBody name = 11;              // {1: name, [2: 1 on objects]}
-  // type 2, 3, 6, 16, 17, 20: empty bodies
+  // type 2, 6, 16, 17, 20: empty bodies
   bytes empty_12 = 12;
-  bytes empty_13 = 13;
+  // type 3 (objects): node-graph binding — EMPTY unless the object owns a
+  // node graph. Listing the graph in reference_list alone does NOT attach
+  // it; this binding is what the game reads.
+  GraphBindingBody graph_binding = 13; // {1:{1:{1:1, 2:graph_guid, 501:20000}}}
   IntBody body_14 = 14;            // type 4: {1:1}
   PairBody body_15 = 15;           // type 5: {1:1, 2:1}
   bytes empty_16 = 16;
@@ -101,8 +211,17 @@ message Component {
 // field 11; parse by context. Fields 11001/10022 above are documentation-only
 // placeholders for the overloaded cases.
 
-message NameBody  { string name = 1; int32 flag = 2; }
+message GraphBindingBody { Outer o = 1;
+  message Outer { Inner i = 1;
+    message Inner { int32 one = 1; int64 graph_guid = 2; int32 k501 = 501; } } }
+
+message NameBody  { string name = 1; int32 flag = 2; } // flag 1 = STATIC unit
+                                                       // prefab; omitted on
+                                                       // DYNAMIC unit prefabs
 message IntBody   { int32 v = 1; int32 v501 = 501; }
+// Load Optimization (object component 12, body field 22):
+//   {1:1}   = "Run If Out Of Range"        (load optimization DISABLED)
+//   {501:1} = "Do Not Run If Out Of Range" (load optimization ENABLED)
 message PairBody  { int32 a = 1; int32 b = 2; }
 message FloatBody { float v = 1; }
 message MarkerBody{ int32 v = 1; int32 v501 = 501; }

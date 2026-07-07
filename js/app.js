@@ -6,8 +6,9 @@ import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
-import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { Viewer } from "./viewer.js";
+import { createEditor } from "./editor/editor.js";
+import { KIND_LABELS } from "./editor/stats.js";
 import { extractMeshes } from "./extract.js";
 import { setupTexturePanel } from "./texture-tools.js";
 import { buildPreview } from "./preview-mesh.js";
@@ -18,6 +19,7 @@ import {
   PRIMITIVE_MODEL_IDS,
 } from "../engine/gia/gia-writer.js";
 import { PRESETS } from "../engine/convert/converter.js";
+import { decimateTriangles } from "../engine/convert/decimate.js";
 
 // Initialize the app against an already-rendered shell (see ui-shell.js).
 // mode: 'gia' (download button builds a .gia file) or 'primitives' (the
@@ -42,6 +44,58 @@ export function initApp({ mode = "gia" } = {}) {
   });
   const worker = new Worker(new URL("./convert-worker.js", import.meta.url), {
     type: "module",
+  });
+
+  // Interactive editor (tools, selection, gizmos, history, optimization) —
+  // see js/editor/. It mutates the active reconstruction's decorations and
+  // calls rebuildActiveRecon() through this context object.
+  const editor = createEditor({
+    viewer,
+    ctx: {
+      getRecon: () => activeRecon(),
+      // decorations display at their true exported coordinates (the model
+      // preview shifts instead) — see updateOverlays
+      offsetOf: () => null,
+      rebuild: (light) => rebuildActiveRecon(light),
+      toast: (t) => showToast(t),
+      budget: () => Math.max(1, parseInt($("p-max").value, 10) || 4995),
+      getSourceObject: () => displayedObject,
+      // base-model transform <-> gizmo sync
+      getModelTransform: () => ({
+        ...readUserTransform(),
+        unitScale: parseFloat($("p-unit").value) || 1,
+      }),
+      setModelTransform: ({ pivot, rotateDeg, scale }) => {
+        const set = (id, v) => {
+          $(id).value = Math.round(v * 10000) / 10000;
+        };
+        if (pivot) {
+          set("t-px", pivot.x);
+          set("t-py", pivot.y);
+          set("t-pz", pivot.z);
+        }
+        if (rotateDeg) {
+          set("t-rx", rotateDeg.x);
+          set("t-ry", rotateDeg.y);
+          set("t-rz", rotateDeg.z);
+        }
+        if (scale != null) set("t-scale", scale);
+        applyUserTransformPreview(false);
+      },
+      estimateSize: (decorations) => {
+        try {
+          if (!decorations.length) return null;
+          return buildGia({
+            models: splitIntoModels(currentName, decorations),
+            exportName: currentName,
+            collision: $("p-collision")?.checked ?? true,
+            autoAssemble: $("p-autoasm")?.checked ?? false,
+          }).length;
+        } catch {
+          return null;
+        }
+      },
+    },
   });
 
   let currentObject = null; // three.js object
@@ -354,7 +408,9 @@ export function initApp({ mode = "gia" } = {}) {
       );
       plane.position.y = h / 2;
       currentObject = plane;
+      displayedObject = plane;
       viewer.setModel(plane);
+      editor.refresh();
       $("drop-hint").hidden = true;
       renderStats($("model-info"), {
         Sprite: file.name,
@@ -381,8 +437,10 @@ export function initApp({ mode = "gia" } = {}) {
     currentName = "model";
     exitSpriteMode();
     currentObject = null;
+    displayedObject = null;
     extracted = null;
     viewer.setModel(null);
+    editor.refresh();
     clearReconstructions();
     texPanel.setTextures([]);
     $("btn-generate").disabled = true;
@@ -404,8 +462,133 @@ export function initApp({ mode = "gia" } = {}) {
     currentObject.position.y = h / 2;
   });
 
+  // ---------- decimation preview ----------
+
+  let displayedObject = null; // what the viewport shows (original or decimated)
+  let decimTimer = 0;
+  function scheduleDecimPreview() {
+    clearTimeout(decimTimer);
+    decimTimer = setTimeout(updateDecimPreview, 200);
+  }
+  function updateDecimPreview() {
+    const strength = (parseInt($("p-decimate").value, 10) || 0) / 100;
+    const want =
+      $("p-prevdec").checked && strength > 0 && extracted && currentObject;
+    if (!want) {
+      if (displayedObject !== currentObject) {
+        displayedObject = currentObject;
+        viewer.setModel(currentObject, true);
+      }
+      return;
+    }
+    const group = new THREE.Group();
+    // gather ALL meshes' world-space triangles and decimate them together —
+    // the same global grid the converter uses (per-mesh grids would barely
+    // collapse anything on multi-mesh models)
+    const all = [];
+    for (const m of extracted.meshes) {
+      const pos = m.positions,
+        idx = m.indices,
+        uvs = m.uvs,
+        mw = m.matrixWorld;
+      const count = idx ? idx.length : pos.length / 3;
+      const xf = (i) => {
+        const x = pos[i * 3],
+          y = pos[i * 3 + 1],
+          z = pos[i * 3 + 2];
+        if (!mw) return { x, y, z };
+        return {
+          x: mw[0] * x + mw[4] * y + mw[8] * z + mw[12],
+          y: mw[1] * x + mw[5] * y + mw[9] * z + mw[13],
+          z: mw[2] * x + mw[6] * y + mw[10] * z + mw[14],
+        };
+      };
+      for (let i = 0; i + 2 < count; i += 3) {
+        const ia = idx ? idx[i] : i,
+          ib = idx ? idx[i + 1] : i + 1,
+          ic = idx ? idx[i + 2] : i + 2;
+        all.push({
+          p: [xf(ia), xf(ib), xf(ic)],
+          uv: uvs
+            ? [
+                [uvs[ia * 2], uvs[ia * 2 + 1]],
+                [uvs[ib * 2], uvs[ib * 2 + 1]],
+                [uvs[ic * 2], uvs[ic * 2 + 1]],
+              ]
+            : null,
+          mesh: m,
+        });
+      }
+    }
+    const decAll = decimateTriangles(all, strength);
+    const byMesh = new Map();
+    for (const t of decAll) {
+      let arr = byMesh.get(t.mesh);
+      if (!arr) {
+        arr = [];
+        byMesh.set(t.mesh, arr);
+      }
+      arr.push(t);
+    }
+    for (const [m, dec] of byMesh) {
+      const uvs = m.uvs;
+      if (!dec.length) continue;
+      const positions = new Float32Array(dec.length * 9);
+      const uvArr = uvs ? new Float32Array(dec.length * 6) : null;
+      let o = 0,
+        uo = 0;
+      for (const t of dec) {
+        for (let k = 0; k < 3; k++) {
+          positions[o++] = t.p[k].x;
+          positions[o++] = t.p[k].y;
+          positions[o++] = t.p[k].z;
+          if (uvArr) {
+            uvArr[uo++] = t.uv ? t.uv[k][0] : 0;
+            uvArr[uo++] = t.uv ? t.uv[k][1] : 0;
+          }
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      if (uvArr) geo.setAttribute("uv", new THREE.BufferAttribute(uvArr, 2));
+      geo.computeVertexNormals();
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(
+          m.color[0] / 255,
+          m.color[1] / 255,
+          m.color[2] / 255,
+        ).convertSRGBToLinear(),
+        side: THREE.DoubleSide,
+      });
+      if (m.texture) {
+        const cv = document.createElement("canvas");
+        cv.width = m.texture.width;
+        cv.height = m.texture.height;
+        cv.getContext("2d").putImageData(
+          new ImageData(
+            new Uint8ClampedArray(m.texture.data),
+            m.texture.width,
+            m.texture.height,
+          ),
+          0,
+          0,
+        );
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.flipY = m.texture.flipY !== false;
+        mat.map = tex;
+        mat.color.set(0xffffff);
+      }
+      group.add(new THREE.Mesh(geo, mat));
+    }
+    displayedObject = group;
+    viewer.setModel(group, true);
+  }
+  $("p-prevdec").addEventListener("change", updateDecimPreview);
+
   function setModel(object) {
     currentObject = object;
+    displayedObject = object;
     // FBX files are often authored in cm
     viewer.setModel(object);
     clearReconstructions();
@@ -428,6 +611,8 @@ export function initApp({ mode = "gia" } = {}) {
       }
     }
     texPanel.setTextures(texList);
+    updateDecimPreview();
+    editor.refresh(); // model gizmo tools become available
   }
 
   // ---------- parameters ----------
@@ -443,7 +628,6 @@ export function initApp({ mode = "gia" } = {}) {
     planarAngleDeg: $("p-planar"),
     flipZ: $("p-flipz"),
     eulerOrder: $("p-euler"),
-    center: $("p-center"),
     primitiveMode: $("p-prim"),
     decimate: $("p-decimate"),
     alphaCutoff: $("p-alpha"),
@@ -457,6 +641,7 @@ export function initApp({ mode = "gia" } = {}) {
   $("p-decimate").addEventListener("input", () => {
     const v = parseInt($("p-decimate").value, 10);
     $("v-decimate").textContent = v === 0 ? "off" : v + "%";
+    scheduleDecimPreview();
   });
   for (const [id, label] of [
     ["p-voxtol", "v-voxtol"],
@@ -489,20 +674,34 @@ export function initApp({ mode = "gia" } = {}) {
   });
 
   // live user transform: mirror on the displayed model immediately
-  const transformIds = ["t-px", "t-py", "t-pz", "t-rx", "t-ry", "t-rz"];
+  const transformIds = ["t-px", "t-py", "t-pz", "t-rx", "t-ry", "t-rz", "t-scale"];
   function readUserTransform() {
     const n = (id) => parseFloat($(id).value) || 0;
+    const s = parseFloat($("t-scale").value);
     return {
       pivot: { x: n("t-px"), y: n("t-py"), z: n("t-pz") },
       rotateDeg: { x: n("t-rx"), y: n("t-ry"), z: n("t-rz") },
+      scale: Number.isFinite(s) && s > 0 ? s : 1,
     };
   }
-  for (const id of transformIds) {
-    $(id).addEventListener("input", () => {
-      const { pivot, rotateDeg } = readUserTransform();
-      viewer.setUserTransform(pivot, rotateDeg);
-    });
+  // syncEditor=false when the change originates from the editor's own gizmo
+  function applyUserTransformPreview(syncEditor = true) {
+    const { pivot, rotateDeg, scale } = readUserTransform();
+    const unit = parseFloat($("p-unit").value) || 1;
+    viewer.setUserTransform(pivot, rotateDeg, scale, unit);
+    if (syncEditor) editor.onModelTransformChanged();
   }
+  for (const id of transformIds) {
+    $(id).addEventListener("input", () => applyUserTransformPreview());
+  }
+  $("p-unit").addEventListener("input", () => applyUserTransformPreview());
+  $("t-reset").addEventListener("click", () => {
+    for (const id of ["t-px", "t-py", "t-pz", "t-rx", "t-ry", "t-rz"]) $(id).value = 0;
+    $("t-scale").value = 1;
+    $("p-unit").value = 1;
+    applyUserTransformPreview();
+    showToast("Transform reset");
+  });
   for (const [key, el] of Object.entries(paramInputs)) {
     el.addEventListener("input", () => {
       if (liveLabels[key]) $(liveLabels[key]).textContent = el.value;
@@ -529,8 +728,9 @@ export function initApp({ mode = "gia" } = {}) {
   });
 
   function readParams() {
-    const { pivot, rotateDeg } = readUserTransform();
+    const { pivot, rotateDeg, scale } = readUserTransform();
     return {
+      userScale: scale,
       mode: $("p-mode").value,
       voxelRes: Math.max(2, parseInt($("p-voxres-n").value, 10) || 256),
       voxelColorTolerance: parseFloat($("p-voxtol").value) || 0,
@@ -552,7 +752,6 @@ export function initApp({ mode = "gia" } = {}) {
       planarAngleDeg: parseFloat(paramInputs.planarAngleDeg.value),
       flipZ: paramInputs.flipZ.checked,
       eulerOrder: paramInputs.eulerOrder.value,
-      center: paramInputs.center.checked,
       primitiveMode: paramInputs.primitiveMode.value,
       decimate: (parseInt(paramInputs.decimate.value, 10) || 0) / 100,
       alphaCutoff: Math.min(
@@ -631,10 +830,11 @@ export function initApp({ mode = "gia" } = {}) {
     setActiveRecon(id);
     renderReconList();
     updateOverlays();
+    editor.onGenerated();
   };
 
   function setActiveRecon(id) {
-    if (activeReconId !== id) editState.selection.clear();
+    const changed = activeReconId !== id;
     activeReconId = id;
     const e = reconstructions.find((r) => r.id === id);
     lastResult = e ? e.msg : null;
@@ -642,7 +842,8 @@ export function initApp({ mode = "gia" } = {}) {
     setOutputReady(!!e);
     if (e) renderGenStats(e.msg.stats, e.params);
     else renderStats($("gen-stats"), {});
-    refreshEditUI();
+    if (changed) editor.onReconChanged();
+    else editor.refresh();
   }
 
   function renderReconList() {
@@ -774,322 +975,27 @@ export function initApp({ mode = "gia" } = {}) {
     });
   }
 
-  function overlayOffsetOf(e) {
-    const off = e.msg.stats.centerOffset;
-    const flip = (e.params?.flipZ ?? true) ? 1 : -1;
-    return off ? { x: -off.x, y: -off.y, z: flip * off.z } : null;
-  }
-
-  let pickMesh = null; // invisible mesh of the ACTIVE reconstruction (picking)
-
+  // The conversion never repositions output (the model origin is preserved),
+  // so decorations always display at their exact exported coordinates.
   function updateOverlays() {
     const mode = $("p-overlay").value;
-    const entries = reconstructions.map((e) => {
-      let colors = e.msg.colors && new Float32Array(e.msg.colors);
-      // highlight the edit selection on the active reconstruction
-      if (e.id === activeReconId && editState.selection.size && e.msg.owners && colors) {
-        for (let t = 0; t < e.msg.owners.length; t++) {
-          if (!editState.selection.has(e.msg.owners[t])) continue;
-          for (let k = 0; k < 9; k += 3) {
-            colors[t * 9 + k] = 1.0;
-            colors[t * 9 + k + 1] = 0.45;
-            colors[t * 9 + k + 2] = 0.05;
-          }
-        }
-      }
-      return {
-        visible: e.visible,
-        positions: e.msg.positions && new Float32Array(e.msg.positions),
-        colors,
-        offset: overlayOffsetOf(e),
-      };
-    });
+    const entries = reconstructions.map((e) => ({
+      visible: e.visible,
+      positions: e.msg.positions,
+      colors: e.msg.colors,
+      offset: null,
+    }));
     viewer.setOverlays(entries, mode);
-    // picking mesh for edit mode
-    pickMesh = null;
-    const active = reconstructions.find((r) => r.id === activeReconId);
-    if (active && active.msg.positions) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(active.msg.positions), 3));
-      pickMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
-      const off = overlayOffsetOf(active);
-      if (off) pickMesh.position.set(off.x, off.y, off.z);
-      pickMesh.updateMatrixWorld(true);
-    }
     if (!currentObject) viewer.frame();
   }
 
   $("p-overlay").addEventListener("change", updateOverlays);
-  $("p-showsrc").addEventListener("change", () =>
-    viewer.setModelVisible($("p-showsrc").checked),
-  );
-
-  // ---------- viewport interaction: edit mode ----------
-
-  const raycaster = new THREE.Raycaster();
-  const pointerNdc = new THREE.Vector2();
-
-  function ndcOf(clientX, clientY) {
-    const rect = $("canvas").getBoundingClientRect();
-    return {
-      x: ((clientX - rect.left) / rect.width) * 2 - 1,
-      y: -((clientY - rect.top) / rect.height) * 2 + 1,
-    };
-  }
-
-  function castAt(ev, target) {
-    if (!target) return null;
-    const n = ndcOf(ev.clientX, ev.clientY);
-    pointerNdc.x = n.x;
-    pointerNdc.y = n.y;
-    raycaster.setFromCamera(pointerNdc, viewer.camera);
-    const hits = raycaster.intersectObject(target, true);
-    return hits[0] ?? null;
-  }
-
-  // marquee (drag) selection state
-  let marquee = null; // { x0, y0, el }
-
-  $("canvas").addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0 || !editState.on || gizmoDragging) return;
-    if ($("ed-tool").value === "select") {
-      marquee = { x0: ev.clientX, y0: ev.clientY, el: null, moved: false };
-    } else {
-      handleEditClick(ev);
-    }
-  });
-  window.addEventListener("pointermove", (ev) => {
-    if (!marquee) return;
-    const dx = ev.clientX - marquee.x0, dy = ev.clientY - marquee.y0;
-    if (!marquee.moved && Math.hypot(dx, dy) < 5) return;
-    marquee.moved = true;
-    if (!marquee.el) {
-      marquee.el = document.createElement("div");
-      marquee.el.id = "marquee";
-      document.body.appendChild(marquee.el);
-    }
-    const x = Math.min(marquee.x0, ev.clientX), y = Math.min(marquee.y0, ev.clientY);
-    Object.assign(marquee.el.style, {
-      left: x + "px", top: y + "px",
-      width: Math.abs(dx) + "px", height: Math.abs(dy) + "px",
-    });
-  });
-  window.addEventListener("pointerup", (ev) => {
-    if (!marquee) return;
-    const m = marquee;
-    marquee = null;
-    m.el?.remove();
-    if (!editState.on) return;
-    if (!m.moved) {
-      handleEditClick(ev);
-      return;
-    }
-    boxSelect(m.x0, m.y0, ev.clientX, ev.clientY, ev.shiftKey);
-  });
-
-  // Box selection: primitives whose display position projects inside the
-  // rectangle AND is actually visible (not occluded by other geometry).
-  function boxSelect(x0, y0, x1, y1, additive) {
-    const e = activeRecon();
-    if (!e || !pickMesh) return;
-    const a = ndcOf(Math.min(x0, x1), Math.min(y0, y1));
-    const b = ndcOf(Math.max(x0, x1), Math.max(y0, y1));
-    const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
-    const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
-    const off = overlayOffsetOf(e) ?? { x: 0, y: 0, z: 0 };
-    const flip = (e.params?.flipZ ?? true) ? -1 : 1;
-    const filterOn = $("ed-filteren").checked;
-    const fc = $("ed-filtercolor").value;
-    const fr = parseInt(fc.slice(1, 3), 16), fg = parseInt(fc.slice(3, 5), 16), fb = parseInt(fc.slice(5, 7), 16);
-    const ftol = parseFloat($("ed-filtertol").value) || 40;
-    if (!additive) editState.selection.clear();
-    const v = new THREE.Vector3();
-    const camPos = viewer.camera.position;
-    for (let i = 0; i < e.msg.decorations.length; i++) {
-      const d = e.msg.decorations[i];
-      if (filterOn) {
-        const dr = ((d.color >> 16) & 255) - fr, dg = ((d.color >> 8) & 255) - fg, db = (d.color & 255) - fb;
-        if (Math.sqrt(dr * dr + dg * dg + db * db) > ftol) continue;
-      }
-      // display-space center of the primitive
-      v.set(d.position.x / 10 + off.x, d.position.y / 10 + off.y, (d.position.z / 10) * flip + off.z);
-      const world = v.clone();
-      v.project(viewer.camera);
-      if (v.z > 1 || v.x < minX || v.x > maxX || v.y < minY || v.y > maxY) continue;
-      // occlusion: the first surface along the ray must belong to this
-      // primitive (or lie at the same depth)
-      const dir = world.clone().sub(camPos);
-      const dist = dir.length();
-      raycaster.set(camPos, dir.normalize());
-      const hits = raycaster.intersectObject(pickMesh);
-      if (hits.length) {
-        const h = hits[0];
-        const owner = e.msg.owners[h.faceIndex];
-        if (owner !== i && h.distance < dist - Math.max(0.03, dist * 0.02)) continue;
-      }
-      editState.selection.add(i);
-    }
-    refreshEditUI();
-    updateOverlays();
-    syncGizmo();
-  }
-
-  // ---------- edit mode ----------
-
-  const editState = { on: false, selection: new Set() };
-
-  // undo stack (Ctrl+Z): decoration-array snapshots, capped
-  const undoStack = [];
-  function pushUndo() {
-    const e = activeRecon();
-    if (!e) return;
-    undoStack.push({
-      reconId: e.id,
-      decorations: e.msg.decorations.map((d) => ({
-        ...d,
-        position: { ...d.position },
-        rotationDeg: { ...d.rotationDeg },
-        scale: { ...d.scale },
-      })),
-    });
-    if (undoStack.length > 25) undoStack.shift();
-  }
-  function undo() {
-    const e = activeRecon();
-    const snap = undoStack.at(-1);
-    if (!e || !snap || snap.reconId !== e.id) return;
-    undoStack.pop();
-    e.msg.decorations = snap.decorations;
-    editState.selection.clear();
-    rebuildActiveRecon();
-    refreshEditUI();
-    syncGizmo();
-    showToast("Undone");
-  }
-
-  // keyboard: Delete removes selection, Ctrl+Z undoes
-  window.addEventListener("keydown", (ev) => {
-    if (!editState.on) return;
-    const tag = document.activeElement?.tagName;
-    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
-    if (ev.key === "Delete" || ev.key === "Backspace") {
-      ev.preventDefault();
-      $("ed-delete").click();
-    } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") {
-      ev.preventDefault();
-      undo();
-    }
-  });
-
-  // ---------- transform gizmo (Move / Rotate / Scale) ----------
-
-  const gizmoProxy = new THREE.Object3D();
-  viewer.scene.add(gizmoProxy);
-  const gizmo = new TransformControls(viewer.camera, $("canvas"));
-  viewer.scene.add(gizmo.getHelper ? gizmo.getHelper() : gizmo);
-  gizmo.setMode("translate");
-  gizmo.enabled = false;
-  let gizmoDragging = false;
-  gizmo.addEventListener("dragging-changed", (ev) => {
-    gizmoDragging = ev.value;
-    viewer.controls.enabled = !ev.value;
-    if (ev.value) pushUndo(); // snapshot at drag start
-  });
-  let gizmoRaf = 0;
-  gizmo.addEventListener("objectChange", () => {
-    if (gizmoRaf) return;
-    gizmoRaf = requestAnimationFrame(() => {
-      gizmoRaf = 0;
-      applyGizmoToSelection();
-    });
-  });
-
-  const FLIP = new THREE.Matrix4().makeScale(1, 1, -1);
-
-  // decoration -> display transform on the proxy
-  function syncGizmo() {
-    const e = activeRecon();
-    const single = e && editState.selection.size === 1
-      ? e.msg.decorations[[...editState.selection][0]]
-      : null;
-    if (!single || !editState.on) {
-      gizmo.detach();
-      gizmo.enabled = false;
-      return;
-    }
-    const off = overlayOffsetOf(e) ?? { x: 0, y: 0, z: 0 };
-    const flip = (e.params?.flipZ ?? true) ? -1 : 1;
-    gizmoProxy.position.set(
-      single.position.x / 10 + off.x,
-      single.position.y / 10 + off.y,
-      (single.position.z / 10) * flip + off.z,
-    );
-    const RAD = Math.PI / 180;
-    const eul = new THREE.Euler(
-      single.rotationDeg.x * RAD, single.rotationDeg.y * RAD, single.rotationDeg.z * RAD,
-      e.params?.eulerOrder === "XYZ" ? "XYZ" : "YXZ",
-    );
-    const m = new THREE.Matrix4().makeRotationFromEuler(eul);
-    if (flip === -1) m.premultiply(FLIP).multiply(FLIP); // F·R·F mirror conjugation
-    gizmoProxy.quaternion.setFromRotationMatrix(m);
-    gizmoProxy.scale.set(
-      Math.max(0.01, single.scale.x),
-      Math.max(0.01, single.scale.y),
-      Math.max(0.01, single.scale.z),
-    );
-    gizmoProxy.updateMatrixWorld(true);
-    gizmo.attach(gizmoProxy);
-    gizmo.enabled = true;
-    gizmo.setMode($("ed-gizmo").value);
-  }
-
-  // display transform on the proxy -> decoration values
-  function applyGizmoToSelection() {
-    const e = activeRecon();
-    if (!e || editState.selection.size !== 1) return;
-    const d = e.msg.decorations[[...editState.selection][0]];
-    const off = overlayOffsetOf(e) ?? { x: 0, y: 0, z: 0 };
-    const flip = (e.params?.flipZ ?? true) ? -1 : 1;
-    const r4 = (v) => Math.round(v * 10000) / 10000;
-    d.position.x = r4((gizmoProxy.position.x - off.x) * 10);
-    d.position.y = r4((gizmoProxy.position.y - off.y) * 10);
-    d.position.z = r4((gizmoProxy.position.z - off.z) * 10 * flip);
-    const m = new THREE.Matrix4().makeRotationFromQuaternion(gizmoProxy.quaternion);
-    if (flip === -1) m.premultiply(FLIP).multiply(FLIP);
-    const eul = new THREE.Euler().setFromRotationMatrix(
-      m, e.params?.eulerOrder === "XYZ" ? "XYZ" : "YXZ",
-    );
-    const DEG = 180 / Math.PI;
-    const norm = (v) => { let x = r4(v * DEG) % 360; if (x < 0) x += 360; return x; };
-    d.rotationDeg.x = norm(eul.x);
-    d.rotationDeg.y = norm(eul.y);
-    d.rotationDeg.z = norm(eul.z);
-    d.scale.x = r4(Math.min(50, Math.max(0.01, gizmoProxy.scale.x)));
-    d.scale.y = r4(Math.min(50, Math.max(0.01, gizmoProxy.scale.y)));
-    d.scale.z = r4(Math.min(50, Math.max(0.01, gizmoProxy.scale.z)));
-    rebuildActiveRecon();
-    refreshEditUI();
-  }
-
-  $("ed-gizmo").addEventListener("change", () => {
-    gizmo.setMode($("ed-gizmo").value);
-  });
-
-  // color picker for the current selection
-  $("ed-selcolor").addEventListener("change", () => {
-    const e = activeRecon();
-    if (!e || !editState.selection.size) return;
-    pushUndo();
-    const color = parseInt($("ed-selcolor").value.slice(1), 16);
-    for (const i of editState.selection) e.msg.decorations[i].color = color;
-    rebuildActiveRecon();
-  });
 
   function activeRecon() {
     return reconstructions.find((r) => r.id === activeReconId) ?? null;
   }
 
-  function rebuildActiveRecon() {
+  function rebuildActiveRecon(light = false) {
     const e = activeRecon();
     if (!e) return;
     const { positions, colors, owners } = buildPreview(e.msg.decorations, e.params);
@@ -1098,138 +1004,18 @@ export function initApp({ mode = "gia" } = {}) {
     e.msg.owners = owners;
     e.msg.stats.placements = e.msg.decorations.length;
     lastResult = e.msg;
+    updateOverlays();
+    if (light) {
+      // mid-drag: skip list/stats/output churn, the editor refreshes on end
+      editor.onRebuilt(true);
+      return;
+    }
     setOutputReady(true);
     renderGenStats(e.msg.stats, e.params);
     renderReconList();
-    updateOverlays();
+    editor.onRebuilt(false);
   }
 
-  function refreshEditUI() {
-    const e = activeRecon();
-    $("edit-panel").hidden = !e;
-    if (!e) { editState.on = false; $("ed-enable").checked = false; }
-    $("edit-tools").hidden = !editState.on;
-    $("ed-place").hidden = $("ed-tool").value !== "place";
-    const n = editState.selection.size;
-    let selText = "Nothing selected";
-    if (n === 1 && e) {
-      const idx = [...editState.selection][0];
-      const d = e.msg.decorations[idx];
-      selText = `Selected: ${MODEL_NAMES[d?.kind] ?? "Roof Component"} #${idx + 1}`;
-    } else if (n > 1) {
-      selText = `${n} primitives selected`;
-    }
-    $("ed-selinfo").textContent = selText;
-    $("ed-delete").disabled = n === 0;
-    $("ed-delete").textContent = n ? `Delete selected (${n})` : "Delete selected";
-    $("ed-colorrow").hidden = n === 0;
-    const single = n === 1 && e ? e.msg.decorations[[...editState.selection][0]] : null;
-    $("ed-transform").hidden = !single;
-    if (single) {
-      $("ed-px").value = single.position.x; $("ed-py").value = single.position.y; $("ed-pz").value = single.position.z;
-      $("ed-rx").value = single.rotationDeg.x; $("ed-ry").value = single.rotationDeg.y; $("ed-rz").value = single.rotationDeg.z;
-      $("ed-zx").value = single.scale.x; $("ed-zy").value = single.scale.y; $("ed-zz").value = single.scale.z;
-      $("ed-selcolor").value = "#" + single.color.toString(16).padStart(6, "0");
-    }
-  }
-
-  function handleEditClick(ev) {
-    const e = activeRecon();
-    if (!e) return;
-    if ($("ed-tool").value === "select") {
-      const hit = castAt(ev, pickMesh);
-      if (!hit) {
-        if (!ev.shiftKey) {
-          editState.selection.clear();
-          refreshEditUI();
-          updateOverlays();
-          syncGizmo();
-        }
-        return;
-      }
-      const owner = e.msg.owners[hit.faceIndex];
-      if (!ev.shiftKey) editState.selection.clear();
-      if (editState.selection.has(owner)) editState.selection.delete(owner);
-      else editState.selection.add(owner);
-      refreshEditUI();
-      updateOverlays();
-      syncGizmo();
-    } else {
-      // place: hit the source model or the reconstruction
-      const hit = castAt(ev, currentObject) ?? castAt(ev, pickMesh);
-      if (!hit) return;
-      const off = overlayOffsetOf(e) ?? { x: 0, y: 0, z: 0 };
-      const flip = (e.params?.flipZ ?? true) ? -1 : 1;
-      // display -> centered target space -> decoration units
-      const tx = hit.point.x - off.x, ty = hit.point.y - off.y, tz = (hit.point.z - off.z) * flip;
-      const s = Math.max(0.01, parseFloat($("ed-size").value) || 0.5);
-      const kind = $("ed-kind").value;
-      const hex = $("ed-color").value;
-      const color = parseInt(hex.slice(1), 16);
-      const scale =
-        kind === "triangle" ? { x: 0.01, y: +(s * 7.7).toFixed(4), z: +(s * 3.704).toFixed(4) } :
-        kind === "plane" ? { x: s * 10, y: 1, z: s * 10 } :
-        kind === "prism" ? { x: +(s / 0.075).toFixed(4), y: s * 10, z: +(s / 0.075).toFixed(4) } :
-        { x: s * 10, y: s * 10, z: s * 10 };
-      pushUndo();
-      e.msg.decorations.push({
-        kind,
-        position: { x: +(tx * 10).toFixed(4), y: +(ty * 10).toFixed(4), z: +(tz * 10).toFixed(4) },
-        rotationDeg: { x: 0, y: 0, z: 0 },
-        scale,
-        color,
-      });
-      rebuildActiveRecon();
-      refreshEditUI();
-    }
-  }
-
-  let savedMouseButtons = null;
-  $("ed-enable").addEventListener("change", () => {
-    editState.on = $("ed-enable").checked;
-    if (!editState.on) editState.selection.clear();
-    // while editing, the left mouse button belongs to the edit tools; orbit
-    // the camera with the right mouse button instead
-    if (editState.on && !savedMouseButtons) {
-      savedMouseButtons = { ...viewer.controls.mouseButtons };
-      viewer.controls.mouseButtons.LEFT = null;
-      viewer.controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
-    } else if (!editState.on && savedMouseButtons) {
-      Object.assign(viewer.controls.mouseButtons, savedMouseButtons);
-      savedMouseButtons = null;
-    }
-    refreshEditUI();
-    updateOverlays();
-    syncGizmo();
-  });
-  $("ed-tool").addEventListener("change", () => {
-    refreshEditUI();
-    syncGizmo();
-  });
-  $("ed-delete").addEventListener("click", () => {
-    const e = activeRecon();
-    if (!e || !editState.selection.size) return;
-    pushUndo();
-    e.msg.decorations = e.msg.decorations.filter((_, i) => !editState.selection.has(i));
-    editState.selection.clear();
-    rebuildActiveRecon();
-    refreshEditUI();
-    syncGizmo();
-  });
-  for (const [id, apply] of [
-    ["ed-px", (d, v) => (d.position.x = v)], ["ed-py", (d, v) => (d.position.y = v)], ["ed-pz", (d, v) => (d.position.z = v)],
-    ["ed-rx", (d, v) => (d.rotationDeg.x = v)], ["ed-ry", (d, v) => (d.rotationDeg.y = v)], ["ed-rz", (d, v) => (d.rotationDeg.z = v)],
-    ["ed-zx", (d, v) => (d.scale.x = v)], ["ed-zy", (d, v) => (d.scale.y = v)], ["ed-zz", (d, v) => (d.scale.z = v)],
-  ]) {
-    $(id).addEventListener("input", () => {
-      const e = activeRecon();
-      if (!e || editState.selection.size !== 1) return;
-      const d = e.msg.decorations[[...editState.selection][0]];
-      apply(d, parseFloat($(id).value) || 0);
-      rebuildActiveRecon();
-      syncGizmo();
-    });
-  }
   $("ed-save").addEventListener("click", () => {
     const e = activeRecon();
     if (!e) return;
@@ -1250,20 +1036,15 @@ export function initApp({ mode = "gia" } = {}) {
       params: e.params,
       visible: true,
     });
-    editState.selection.clear();
     setActiveRecon(id);
     renderReconList();
     updateOverlays();
-    refreshEditUI();
-    syncGizmo();
     showToast("Saved as new model");
   });
 
   // clear all generated models (source model stays)
   $("btn-clear-recons").addEventListener("click", () => {
-    editState.selection.clear();
     clearReconstructions();
-    refreshEditUI();
   });
 
   // ---------- output: .gia download or primitive data ----------
@@ -1272,6 +1053,7 @@ export function initApp({ mode = "gia" } = {}) {
   function setOutputReady(ready) {
     const dl = $("btn-download");
     if (dl) dl.disabled = !ready;
+    $("ed-save").disabled = !ready;
     const view = $("btn-view-prims");
     if (view) {
       view.disabled = !ready;
@@ -1299,6 +1081,7 @@ export function initApp({ mode = "gia" } = {}) {
       models,
       exportName: currentName,
       collision: $("p-collision").checked,
+      autoAssemble: $("p-autoasm")?.checked ?? false,
     });
     const blob = new Blob([bytes], { type: "application/octet-stream" });
     const a = document.createElement("a");
@@ -1319,18 +1102,9 @@ export function initApp({ mode = "gia" } = {}) {
     return String(Object.is(r, -0) ? 0 : r);
   };
 
-  // Model Name/ID of the primitive's base decoration model, as defined in the
-  // provided base .gia files.
-  const MODEL_NAMES = {
-    triangle: "Roof Component",
-    square: "Cuboid",
-    plane: "Plane",
-    sphere: "Sphere",
-    cylinder: "Cylinder",
-    cone: "Cone",
-    prism: "Triangular Prism",
-  };
-  const modelName = (d) => MODEL_NAMES[d.kind] ?? MODEL_NAMES.triangle;
+  // Model Name/ID of the primitive's base decoration model, as defined in
+  // the provided base .gia files (single source of truth: editor/stats.js).
+  const modelName = (d) => KIND_LABELS[d.kind] ?? KIND_LABELS.triangle;
   const modelId = (d) =>
     PRIMITIVE_MODEL_IDS[d.kind] ?? PRIMITIVE_MODEL_IDS.triangle;
 
@@ -1500,4 +1274,6 @@ export function initApp({ mode = "gia" } = {}) {
       el.append(kEl, vEl);
     }
   }
+
+  editor.refresh(); // initial UI state (empty scene)
 } // end initApp

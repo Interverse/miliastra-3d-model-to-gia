@@ -159,3 +159,66 @@ files, so they only need to be file-unique.
 
 Max 999 decorations per object model. Split into multiple objects (multiple
 field-1 entries at the same transform) when exceeding it.
+
+## Dynamic unit prefabs, devices, and load optimization
+
+Reverse-engineered from the Static/Dynamic, Follow/No Follow, and Load
+Optimization sample pairs (see `gia-decoration.proto` for the message
+definitions):
+
+- **Static vs dynamic**: a STATIC unit prefab sets `flag = 1` (field 2) in
+  its name component (`logic_components` type 1). A DYNAMIC unit prefab
+  omits the flag and carries a device list in prefab-body **field 8**.
+- **Devices** (`8: {1: type, 2: 1, <type+10>: body}`): dynamic prefabs
+  always carry types `18` (hit/knockdown effect slots + `"GI_RootNode"`),
+  `1`, `3`, `19`, `6`, `14` (empty bodies), in that order.
+- **Follow Motion Device** = device type `9` (body field 19):
+  `{2: "GI_RootNode", 3: {1: 1.0, 3: 1.0}, 4: {}, 5: 1200, 6: 1100,
+  7: {11: {}}, 502: "Completely Follow"}`.
+- **Load optimization** (object entity component 12, body field 22):
+  `{501: 1}` = "Do Not Run If Out Of Range" (optimization enabled, the
+  default), `{1: 1}` = "Run If Out Of Range" (optimization disabled).
+
+## Node graphs (resource_class = 9)
+
+A node graph is a top-level `decorations`-field entry with
+`identity = {2: 5, 4: guid}`, `resource_class = 5` field set to 9, and its
+payload in entry **field 13**. The owning object lists the graph's id
+(`{2:5, 4:guid}`) at the END of its `reference_list` **and** — this is what
+actually attaches it — carries a binding in its entity component type 3
+(body field 13): `{1: {1: {1: 1, 2: graph_guid, 501: 20000}}}`. Without the
+binding the graph entity is present in the file but the game treats the
+object as having no node graph (verified with the
+`minecraft_-_creeper` / `node_graph_attached` sample pair, which differ only
+in this binding).
+
+Payload: `13: {1: {1: GRAPH}}` where GRAPH is
+`{1: {1:10000, 2:20000, 3:21001, 5:guid}, 2: name, 3: NODE...}`.
+
+Each NODE: `{1: node_id, 2: TYPE, 3: TYPE, 4: PIN..., 5: x, 6: y}` with
+`TYPE = {1:10001, 2:20000, 3:22000, 5: node_type}`. Observed node types:
+
+| type | node |
+|---|---|
+| 71  | When Entity Is Created |
+| 73  | Self Entity (data output pin `{1:4}`) |
+| 99  | entity transform getter (outputs `{1:4}`, `{1:4,2:1}`) |
+| 252 | Create Prefab (prefab-id param, data type 21) |
+| 668 | Switch Follow Motion Device Target by Entity |
+
+Pins are stored only when they carry a value and/or a link:
+`{1: pin_id, 2: pin_id, 3: VALUE?, 4: data_type?, 5: LINK?}`. Pin ids:
+`{1:1}` exec-in, `{1:2}` exec-out, `{1:3[,2:k]}` parameters, `{1:4[,2:k]}`
+data outputs. A LINK `{1: remote_node, 2: remote_pin, 3: remote_pin}` is
+stored on the downstream side (exec: on the out-pin; data: on the consuming
+pin). VALUE = `{1: class, 2: 1, 4: {1:1, 100:{1: data_type}}, 10X: {...}}`
+with class/field pairs: prefab `1/101`, string `5/105`, int `6/106`, entity
+`7/107` (`{1:{}}` = unset).
+
+**Auto-assembly graph** (as produced by the in-game workflow and this
+exporter): exec chain `71 → 252 → 668 → 252 → 668 → …` — one Create
+Prefab (prefab-id = follower guid) plus one Switch Follow Motion Device
+Target per follower; every Create Prefab takes position/rotation from the
+type-99 getter (fed by type-73 Self) and every Switch sets the spawned
+entity (CP output `{1:4}`) to follow Self on device `"GI_RootNode"` with
+speeds 1200/1100.

@@ -1,6 +1,28 @@
-// Three.js scene: source model display + generated-triangle overlay.
+// Three.js scene: source model display + generated-primitive overlays +
+// selection highlight. Overlays are merged geometry (one draw call per
+// reconstruction per style), and repeated updates with an unchanged
+// triangle count are applied in place (attribute copy, no geometry
+// rebuild) so gizmo drags stay smooth on large scenes.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// all 3 edges of every triangle (18 floats per triangle)
+function fillEdges(positions, out) {
+  let o = 0;
+  for (let t = 0; t < positions.length; t += 9) {
+    for (const [a, b] of [[0, 3], [3, 6], [6, 0]]) {
+      out[o++] = positions[t + a];
+      out[o++] = positions[t + a + 1];
+      out[o++] = positions[t + a + 2];
+      out[o++] = positions[t + b];
+      out[o++] = positions[t + b + 1];
+      out[o++] = positions[t + b + 2];
+    }
+  }
+}
+
+const offsetEq = (a, b) =>
+  (a?.x ?? 0) === (b?.x ?? 0) && (a?.y ?? 0) === (b?.y ?? 0) && (a?.z ?? 0) === (b?.z ?? 0);
 
 export class Viewer {
   constructor(canvas) {
@@ -28,10 +50,19 @@ export class Viewer {
     this.scene.add(this.grid);
     this.axes = new THREE.AxesHelper(1);
     this.scene.add(this.axes);
+    // 1-meter reference: a vertical ruler at the origin with 0.25 m ticks and
+    // a "1 m" label. Unlike the grid it never rescales with the model.
+    this.ref1m = this._buildMeterRef();
+    this.scene.add(this.ref1m);
 
     this.modelGroup = new THREE.Group();
     this.overlayGroup = new THREE.Group();
-    this.scene.add(this.modelGroup, this.overlayGroup);
+    this.selGroup = new THREE.Group();
+    this.selGroup.renderOrder = 5;
+    this.scene.add(this.modelGroup, this.overlayGroup, this.selGroup);
+
+    this._ovlCache = null; // { mode, items: [{group, mesh?, lines?, len, offset}] }
+    this._focusTween = null;
 
     this._resize();
     window.addEventListener('resize', () => this._resize());
@@ -39,9 +70,47 @@ export class Viewer {
       new ResizeObserver(() => this._resize()).observe(canvas.parentElement);
     }
     this.renderer.setAnimationLoop(() => {
+      this._stepFocus();
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
     });
+  }
+
+  _buildMeterRef() {
+    const group = new THREE.Group();
+    const pts = [];
+    // vertical bar 0..1 m, slightly outside the origin so axes stay readable
+    const x = 0, z = 0;
+    pts.push(x, 0, z, x, 1, z);
+    for (let i = 0; i <= 4; i++) {
+      const t = i / 4;
+      const len = i % 4 === 0 ? 0.08 : 0.04;
+      pts.push(x - len, t, z, x + len, t, z);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(pts), 3));
+    group.add(new THREE.LineSegments(
+      geo,
+      new THREE.LineBasicMaterial({ color: 0xf0b429, transparent: true, opacity: 0.9 }),
+    ));
+    // "1 m" label sprite
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 64;
+    const cx = cv.getContext('2d');
+    cx.font = 'bold 40px system-ui, sans-serif';
+    cx.fillStyle = '#f0b429';
+    cx.textAlign = 'center';
+    cx.textBaseline = 'middle';
+    cx.fillText('1 m', 64, 32);
+    const tex = new THREE.CanvasTexture(cv);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthTest: false,
+    }));
+    sprite.scale.set(0.3, 0.15, 1);
+    sprite.position.set(x + 0.22, 1, z);
+    group.add(sprite);
+    group.renderOrder = 4;
+    return group;
   }
 
   _resize() {
@@ -52,10 +121,10 @@ export class Viewer {
     this.camera.updateProjectionMatrix();
   }
 
-  setModel(object3d) {
+  setModel(object3d, keepView = false) {
     this.modelGroup.clear();
     if (object3d) this.modelGroup.add(object3d);
-    this.frame();
+    if (!keepView) this.frame();
   }
 
   frame() {
@@ -73,27 +142,119 @@ export class Viewer {
     this.grid.scale.setScalar(gridSize / 10);
   }
 
-  // triangles: Float32Array of xyz triplets (9 per triangle), colors:
-  // Float32Array rgb per vertex (0..1). Displayed as wireframe + optional fill.
-  // Rebuild all reconstruction overlays.
+  // Smoothly move the camera so the given Box3 fills the view (focus-on-
+  // selection). Keeps the current viewing direction.
+  focusOn(box) {
+    if (!box || box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z, 0.05) * 0.6;
+    const dir = this.camera.position.clone().sub(this.controls.target);
+    if (dir.lengthSq() < 1e-9) dir.set(1, 0.7, 1);
+    dir.normalize();
+    const dist = (radius / Math.tan((this.camera.fov * Math.PI) / 360)) * 1.35;
+    this._focusTween = {
+      t0: performance.now(),
+      dur: 260,
+      fromPos: this.camera.position.clone(),
+      toPos: center.clone().addScaledVector(dir, dist),
+      fromTgt: this.controls.target.clone(),
+      toTgt: center,
+    };
+    this.camera.near = Math.max(dist / 1000, 0.0005);
+    this.camera.far = Math.max(this.camera.far, dist * 100);
+    this.camera.updateProjectionMatrix();
+  }
+
+  _stepFocus() {
+    const t = this._focusTween;
+    if (!t) return;
+    const k = Math.min(1, (performance.now() - t.t0) / t.dur);
+    const e = k * (2 - k); // ease-out
+    this.camera.position.lerpVectors(t.fromPos, t.toPos, e);
+    this.controls.target.lerpVectors(t.fromTgt, t.toTgt, e);
+    if (k >= 1) this._focusTween = null;
+  }
+
+  setHelpers({ grid, axes } = {}) {
+    if (grid !== undefined) {
+      this.grid.visible = grid;
+      this.ref1m.visible = grid; // the meter ruler follows the grid toggle
+    }
+    if (axes !== undefined) this.axes.visible = axes;
+  }
+
+  // Rebuild (or update in place) all reconstruction overlays.
   // entries: [{ positions: Float32Array, colors: Float32Array|null,
   //             offset: {x,y,z}|null, visible: boolean }]
-  // offset = display-space shift so a recentered conversion still overlays
-  // the original (uncentered) source model.
+  // offset = optional display-space shift for an entry (normally null; kept
+  // for API completeness).
   setOverlays(entries, mode) {
-    this.overlayGroup.clear();
-    if (mode === 'off' || !entries) return;
-    for (const e of entries) {
-      if (!e.visible || !e.positions || e.positions.length === 0) continue;
-      const group = new THREE.Group();
-      if (e.offset) group.position.set(e.offset.x, e.offset.y, e.offset.z);
+    entries = entries ?? [];
+    const cache = this._ovlCache;
+    const compatible =
+      cache &&
+      cache.mode === mode &&
+      mode !== 'off' &&
+      cache.items.length === entries.length &&
+      entries.every(
+        (e, i) =>
+          e.positions &&
+          cache.items[i].len === e.positions.length &&
+          offsetEq(e.offset, cache.items[i].offset),
+      );
 
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(e.positions, 3));
-      if (e.colors) geo.setAttribute('color', new THREE.BufferAttribute(e.colors, 3));
-      geo.computeVertexNormals();
+    if (compatible) {
+      // fast path: copy attribute data in place, no geometry rebuild
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        const it = cache.items[i];
+        it.group.visible = !!e.visible;
+        if (!e.visible) continue;
+        if (it.mesh) {
+          it.mesh.geometry.attributes.position.array.set(e.positions);
+          it.mesh.geometry.attributes.position.needsUpdate = true;
+          if (e.colors && it.mesh.geometry.attributes.color) {
+            it.mesh.geometry.attributes.color.array.set(e.colors);
+            it.mesh.geometry.attributes.color.needsUpdate = true;
+          }
+          it.mesh.geometry.computeBoundingSphere();
+        }
+        if (it.lines) {
+          fillEdges(e.positions, it.lines.geometry.attributes.position.array);
+          it.lines.geometry.attributes.position.needsUpdate = true;
+          it.lines.geometry.computeBoundingSphere();
+        }
+      }
+      return;
+    }
+
+    // full rebuild
+    for (const child of this.overlayGroup.children) {
+      child.traverse((n) => {
+        n.geometry?.dispose();
+        n.material?.dispose();
+      });
+    }
+    this.overlayGroup.clear();
+    this._ovlCache = null;
+    if (mode === 'off' || !entries.length) return;
+
+    const items = [];
+    for (const e of entries) {
+      if (!e.positions || e.positions.length === 0) {
+        items.push({ len: -1 });
+        continue;
+      }
+      const group = new THREE.Group();
+      group.visible = !!e.visible;
+      if (e.offset) group.position.set(e.offset.x, e.offset.y, e.offset.z);
+      const it = { group, len: e.positions.length, offset: e.offset ?? null, mesh: null, lines: null };
 
       if (mode === 'solid' || mode === 'both') {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(e.positions, 3));
+        if (e.colors) geo.setAttribute('color', new THREE.BufferAttribute(e.colors, 3));
         // unlit material: preview colors match the .gia values exactly
         const mat = new THREE.MeshBasicMaterial({
           vertexColors: !!e.colors,
@@ -102,32 +263,74 @@ export class Viewer {
           polygonOffsetFactor: 1,
           polygonOffsetUnits: 1,
         });
-        group.add(new THREE.Mesh(geo, mat));
+        it.mesh = new THREE.Mesh(geo, mat);
+        group.add(it.mesh);
       }
       if (mode === 'wireframe' || mode === 'both') {
-        const wireGeo = new THREE.WireframeGeometry(geo);
+        const edgePos = new Float32Array((e.positions.length / 9) * 18);
+        fillEdges(e.positions, edgePos);
+        const wireGeo = new THREE.BufferGeometry();
+        wireGeo.setAttribute('position', new THREE.BufferAttribute(edgePos, 3));
         const wireMat = new THREE.LineBasicMaterial({
           color: mode === 'both' ? 0x101114 : 0x36d47e,
           transparent: true,
           opacity: 0.85,
           depthTest: true,
         });
-        group.add(new THREE.LineSegments(wireGeo, wireMat));
+        it.lines = new THREE.LineSegments(wireGeo, wireMat);
+        group.add(it.lines);
       }
       this.overlayGroup.add(group);
+      items.push(it);
     }
+    this._ovlCache = { mode, items };
   }
 
-  // legacy single-overlay API (clears everything when called with null)
-  setOverlay(positions, colors, mode, offset) {
-    this.setOverlays(positions ? [{ positions, colors, offset, visible: true }] : [], mode ?? 'off');
+  // Selection highlight: non-destructive OUTLINE only — the primitives keep
+  // their true colors. Bright depth-tested edges mark the visible part; a
+  // faint depth-ignoring pass keeps occluded selections readable.
+  setSelection(positions, offset) {
+    for (const child of this.selGroup.children) {
+      child.traverse((n) => {
+        n.geometry?.dispose();
+        n.material?.dispose();
+      });
+    }
+    this.selGroup.clear();
+    if (!positions || positions.length === 0) return;
+
+    const group = new THREE.Group();
+    if (offset) group.position.set(offset.x, offset.y, offset.z);
+    const edgePos = new Float32Array((positions.length / 9) * 18);
+    fillEdges(positions, edgePos);
+    const wireGeo = new THREE.BufferGeometry();
+    wireGeo.setAttribute('position', new THREE.BufferAttribute(edgePos, 3));
+    const outline = new THREE.LineSegments(
+      wireGeo,
+      new THREE.LineBasicMaterial({ color: 0xff9526, transparent: true, opacity: 1 }),
+    );
+    const xrayOutline = new THREE.LineSegments(
+      wireGeo,
+      new THREE.LineBasicMaterial({
+        color: 0xff9526,
+        transparent: true,
+        opacity: 0.18,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    group.add(outline, xrayOutline);
+    this.selGroup.add(group);
   }
 
   setModelVisible(v) { this.modelGroup.visible = v; }
 
   // Mirror the engine's user pre-transform on the displayed source model:
-  // p' = R * (p - pivot), rotation Euler YXZ degrees, source/display space.
-  setUserTransform(pivot, rotateDeg) {
+  // p' = R * s * (p_m - pivot), p_m = unitScale * p_src, rotation Euler YXZ
+  // degrees.
+  setUserTransform(pivot, rotateDeg, userScale = 1, unitScale = 1) {
+    const s = userScale || 1;
+    const k = s * (unitScale || 1);
     const e = new THREE.Euler(
       (rotateDeg?.x ?? 0) * Math.PI / 180,
       (rotateDeg?.y ?? 0) * Math.PI / 180,
@@ -135,7 +338,12 @@ export class Viewer {
       'YXZ',
     );
     this.modelGroup.rotation.copy(e);
-    const p = new THREE.Vector3(-(pivot?.x ?? 0), -(pivot?.y ?? 0), -(pivot?.z ?? 0));
+    this.modelGroup.scale.setScalar(k);
+    const p = new THREE.Vector3(
+      -s * (pivot?.x ?? 0),
+      -s * (pivot?.y ?? 0),
+      -s * (pivot?.z ?? 0),
+    );
     p.applyEuler(e);
     this.modelGroup.position.copy(p);
   }

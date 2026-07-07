@@ -26,7 +26,25 @@ pipeline, viewer, and parameters.
   mark primitives as manually processed (plus a Copy JSON button). Positions
   and zoom are in units of 0.1 m; rotations in degrees.
 - `gia/index.html` — the `.gia` export page: **Download .gia**, the collision
-  toggle, and format documentation links live here.
+  toggle, **Auto-Assemble On Runtime**, and format documentation links live
+  here.
+
+### Auto-Assemble On Runtime
+
+Normally every generated object is exported as a STATIC unit prefab. With
+**Auto-Assemble On Runtime** enabled, the export instead produces
+dynamically assembled prefabs:
+
+- every object becomes a **Dynamic Unit Prefab** with load optimization
+  disabled ("Run If Out Of Range");
+- the **first object is the Main object** (its name is prefixed with
+  **"(Main)"**); every other object carries a **Follow Motion Device**
+  ("Completely Follow");
+- the Main object always owns a **node graph** that starts at *When Entity
+  Is Created* and chains a *Create Prefab* node (referencing each follower's
+  prefab ID inside the same file) into a *Switch Follow Motion Device Target
+  by Entity* node, so every spawned part follows the Main object at runtime
+  (with a single object the graph contains no Create Prefab chains).
 
 ## Textures
 
@@ -74,9 +92,8 @@ at the origin) with a position, per-axis scale, and Euler rotation:
 | Parameter | Effect |
 |---|---|
 | Priority preset | Fidelity / Balanced / Minimal bundles of the below |
-| Input unit scale | Source units → meters multiplier (e.g. 0.01 for cm FBX) |
 | Primitives | Triangles / Squares / Both (see below) |
-| Decimation | Vertex-clustering simplification of the source mesh (UV-preserving) before conversion — for high-poly models |
+| Decimation | Vertex-clustering simplification of the source mesh (UV-preserving) before conversion — for high-poly models. **Preview decimation** shows the simplified mesh in the viewport while adjusting |
 | Color tolerance | RGB distance treated as "same color" (merge + subdivision) |
 | Texture subdivision depth | Max recursion for texture detail (4ⁿ growth) |
 | Right-angle snap | Near-right triangles become one decoration instead of two |
@@ -86,8 +103,16 @@ at the origin) with a position, per-axis scale, and Euler rotation:
 | Flip Z | Convert -Z-forward sources to the target's Y-up +Z-forward |
 | Euler order | Rotation convention used by the target engine (default YXZ) |
 | Alpha cutoff | Texture regions below this alpha generate no geometry (fully transparent pixels are always skipped) |
-| Transform | Pivot (moved to the origin) and rotation applied before conversion; previewed live in the viewport |
+| Transform | Input unit scale (source units → meters), uniform Scale, Pivot (moved to the origin), and Rotation — applied before conversion as p' = R·s·(p·unit − pivot). All of it previews live in the viewport, and when no primitives are selected the Move/Rotate/Scale gizmos grab the source model directly (two-way sync with the numeric fields) |
 | Collision | Whether exported models collide (object component 5) |
+
+The exported `.gia` uses exactly the coordinates shown in the editor: the
+model origin is preserved as-is (geometry may extend above or below it —
+nothing is recentered or snapped to the ground), so in-game placement
+relative to the model's origin matches the viewport 1:1. **Reset
+Transform** restores pivot, rotation, scale, and input unit scale to their
+defaults, and a yellow **1 m reference ruler** at the origin (toggled with
+the grid) helps judge scale.
 
 ### Conversion modes
 
@@ -128,27 +153,63 @@ multiple textures). All edits feed the conversion directly:
 - Everything is non-destructive until Reset; adjustments recompute from the
   original pixels so sliders never accumulate loss.
 
-### Edit mode
+### The editor
 
-With a generated reconstruction selected, the **Edit model** panel lets you:
+The interface is a three-pane editor: import/conversion parameters on the
+left (collapsible panels, resizable), the viewport in the middle with a
+toolbar and status bar, and the scene/editing panels on the right
+(resizable). Generating a reconstruction switches to the Select tool
+automatically; while any editing tool is active the left mouse button drives
+the tool, the right button orbits, and the middle button pans.
 
-- click primitives to select them (the type and index are shown; Shift-click
-  adds), or **drag a box** to select every primitive visible inside it —
-  occluded primitives are skipped, and selection can optionally be filtered
-  by color;
-- manipulate the selected primitive with standard **Move / Rotate / Scale
-  gizmos** directly in the viewport (or numerically);
-- recolor the selection with an RGB picker;
-- press **Delete** to remove the selection and **Ctrl+Z** to undo the last
-  edit (placements, deletions, transforms, and recolors are all undoable);
-- place new primitives (any type, color, size) onto surfaces;
-- **Save edits as a new model** to store the result as its own
-  reconstruction.
+**Viewport toolbar** — tools (Orbit, Select **Q**, Move **W**, Rotate **E**,
+Scale **R**, Place **T**; **Space** cycles Move → Rotate → Scale),
+World/Local gizmo axes (**X**), grid snapping (hold **Ctrl** to invert
+temporarily; snap step configurable), Focus on selection (**F**), and
+visibility toggles for the source model, grid (**G**), axes, and the overlay
+style (wireframe / solid / both / hidden). The status bar shows live
+decoration/selection/model counts, the estimated .gia size, and any
+warnings. With no primitives selected, Move/Rotate/Scale manipulate the
+source model itself (pivot/rotation/scale, synced with the Transform
+panel).
 
-While Edit mode is on, the left mouse button drives the tools — orbit with
-the right mouse button. Generate stays pinned at the bottom of the sidebar,
-and the reconstruction list has a one-click **Clear all generated models**
-button.
+**Selection** — click (Shift adds, Ctrl toggles), drag a box for marquee
+selection, All / None / Invert (**Ctrl+A**, **Alt+A** or **Esc**,
+**Ctrl+I**). Box selection is *visible-only* by default: a GPU ID buffer
+resolves occlusion pixel-exactly, so hidden primitives are skipped — enable
+**Select through** to grab everything in the rectangle. A filter (primitive
+type and/or color with tolerance) constrains box selection and powers the
+Select / Add / Remove buttons for select-by-type and select-by-color.
+Selection is indicated non-destructively: primitives keep their true colors
+and get an orange outline (plus a faint x-ray outline where occluded).
+
+**Editing** — Move/Rotate/Scale gizmos work on any selection size (multi-
+object transforms pivot on the selection center; world or local axes);
+numeric position/rotation/zoom editing (multi-selection edits move the
+group); an RGB color picker; Duplicate (**Ctrl+D**), Copy/Paste
+(**Ctrl+C/V**), Delete (**Del**), and full undo/**redo** (**Ctrl+Z** /
+**Ctrl+Y** or **Ctrl+Shift+Z**) covering placements, deletions, transforms,
+recolors, and optimization passes. The Place tool (contextual toolbar: type,
+color, size) drops primitives onto any surface and selects them. **Save
+edits as a new model** stores the result as its own reconstruction.
+
+**Statistics panel** — decoration count, distribution across ≤999-decoration
+models, per-type counts, unique colors, and the estimated .gia output size
+(computed with the real writer), plus warnings when the decoration budget,
+the zoom-50 limit, or the per-model split threshold is exceeded.
+
+**Optimize panel** —
+- *Merge adjacent primitives*: coalesces same-plane, same-size
+  cuboids/planes with matching colors (tolerance slider) into larger ones,
+  splitting any merge that would exceed zoom 50;
+- *Remove hidden primitives*: renders the reconstruction from 26 viewpoints
+  into a GPU ID buffer and deletes primitives visible from none of them;
+- *Reduce to target*: escalating-tolerance merging first, then drops the
+  smallest primitives until the target count is met.
+
+All edits rebuild previews in place (attribute updates, no geometry
+reallocation) so gizmo drags stay smooth on large scenes; reconstructions
+render as merged geometry (one draw call each).
 
 When the decoration budget is exceeded, adjacent same-plane squares are
 merged with progressively relaxed color tolerance before anything is
@@ -255,11 +316,18 @@ appear skewed in-game, switch **Euler order** to XYZ and regenerate.
 index.html          primitive-data landing page (thin skeleton)
 gia/index.html      .gia export page (same shell + app, adds download)
 css/style.css
-js/ui-shell.js      shared UI markup for both pages
+js/ui-shell.js      shared UI markup for both pages (toolbar, panels, resize)
 js/app.js           shared app logic (initApp), loaders, outputs
-js/viewer.js        three.js scene + overlay
+js/viewer.js        three.js scene: model, overlays, selection, focus
 js/extract.js       three.js → engine mesh data
 js/convert-worker.js  conversion Web Worker
+js/editor/          interactive editor systems
+  editor.js           tools, gizmos, shortcuts, panels (wires the rest)
+  picking.js          GPU ID-buffer picking / visibility analysis
+  history.js          undo/redo snapshots
+  dec-transform.js    decoration <-> display transform math
+  stats.js            live statistics + .gia limit warnings
+  optimize.js         merge-adjacent / reduce-count tools
 engine/             reusable conversion engine (no dependencies)
 tools/analyzer.html protobuf analyzer used to reverse-engineer .gia
 docs/gia-format.md  format specification

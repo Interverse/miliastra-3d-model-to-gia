@@ -124,7 +124,8 @@ export function buildPreview(decorations, params) {
         const R = side / Math.sqrt(3);
         const corners = [];
         for (let i = 0; i < 3; i++) {
-          const a = i / 3 * 2 * Math.PI + Math.PI / 2;
+          // -PI/2 start: the in-game prism faces the opposite way (180° on Y)
+          const a = i / 3 * 2 * Math.PI - Math.PI / 2;
           corners.push([R * Math.cos(a), R * Math.sin(a)]);
         }
         const top = corners.map(([x, z]) => xf(x, hy, z));

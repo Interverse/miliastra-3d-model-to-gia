@@ -44,13 +44,13 @@ export const DEFAULT_PARAMS = {
   thinScale: 0.01,       // decoration thin-axis scale (X for triangles, Y for squares)
   eulerOrder: 'YXZ',     // rotation decomposition order (engine convention)
   minTriangleArea: 1e-8, // m^2, drop degenerates
-  center: true,          // recenter model on origin (XZ) and rest on Y=0
-  mode: 'direct',        // 'direct' | 'voxel' | 'pixel' | 'fit'
+  mode: 'direct',        // 'direct' | 'voxel' | 'pixel'
   primitiveMode: 'triangles', // direct mode: 'triangles' | 'both'
   decimate: 0,           // 0..1 vertex-clustering decimation strength
   alphaCutoff: 0.5,      // texture regions with max alpha below this are skipped
   pivot: null,           // {x,y,z} source-space pivot moved to the origin (m)
   rotateDeg: null,       // {x,y,z} source-space pre-rotation (degrees, YXZ)
+  userScale: 1,          // uniform user scale applied around the pivot
   // --- voxel mode ---
   voxelRes: 48,          // voxels across the largest dimension
   voxelSize: null,       // explicit voxel size (m); overrides voxelRes
@@ -257,14 +257,16 @@ export function convert(input, userParams = {}) {
     bounds: null,
   };
 
-  // user pre-transform (source space): p' = R * (p - pivot)
+  // user pre-transform (source space, meters): p' = R * s * (p - pivot)
   const hasPivot = params.pivot && (params.pivot.x || params.pivot.y || params.pivot.z);
   const hasRot = params.rotateDeg && (params.rotateDeg.x || params.rotateDeg.y || params.rotateDeg.z);
+  const userS = params.userScale > 0 ? params.userScale : 1;
   const userR = hasRot ? eulerYXZToMat({
     x: params.rotateDeg.x * RAD, y: params.rotateDeg.y * RAD, z: params.rotateDeg.z * RAD,
   }) : null;
   const userXform = (q) => {
     if (hasPivot) q = sub(q, params.pivot);
+    if (userS !== 1) q = mul(q, userS);
     if (userR) q = matMulVec(userR, q);
     return q;
   };
@@ -283,7 +285,7 @@ export function convert(input, userParams = {}) {
     // One box (elongated square/unit-cube primitive) per maximal same-color
     // pixel rectangle: covers front, back, and edges with a single
     // decoration. Skips the triangle pipeline entirely.
-    return convertSpriteBoxes(sprite, params, stats, { userR, userXform, hasPivot });
+    return convertSpriteBoxes(sprite, params, stats, { userR, userXform, hasPivot, userS });
   }
 
   let raw = [];
@@ -357,7 +359,7 @@ export function convert(input, userParams = {}) {
         color: b.color,
         area: Math.max(b.size.x * b.size.y, b.size.x * b.size.z, b.size.y * b.size.z),
       }));
-      recenterPlacements(placements, params, stats);
+      measurePlacements(placements, stats);
       return finishPlacements(placements, params, stats);
     }
   }
@@ -387,8 +389,8 @@ export function convert(input, userParams = {}) {
       subdivideForColor(t, t.mesh, local, 0, restColored, budget, stats);
     }
     stats.afterSubdivision = placements.length + restColored.length;
-    // recenter placements and remaining triangles together
-    if (params.center) {
+    // bounds for stats only — the model origin is preserved as-is
+    if (placements.length + restColored.length) {
       let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;
       for (const p of placements) {
         const R = p.rotation, h = [p.scale.x / 2, 0.001, p.scale.z / 2];
@@ -403,13 +405,7 @@ export function convert(input, userParams = {}) {
         minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y);
         minZ = Math.min(minZ, q.z); maxZ = Math.max(maxZ, q.z);
       }
-      if (placements.length + restColored.length) {
-        const off = v3(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
-        for (const p of placements) p.position = add(p.position, off);
-        for (const t of restColored) t.p = t.p.map((q) => add(q, off));
-        stats.bounds = { x: round6(maxX - minX), y: round6(maxY - minY), z: round6(maxZ - minZ) };
-        stats.centerOffset = { x: off.x, y: off.y, z: off.z };
-      }
+      stats.bounds = { x: round6(maxX - minX), y: round6(maxY - minY), z: round6(maxZ - minZ) };
     }
     // remaining triangles: pair what forms rectangles, decompose the rest
     const canonicalPx = { ...DEFAULT_CANONICAL, thinScale: params.thinScale };
@@ -444,20 +440,17 @@ export function convert(input, userParams = {}) {
     stats.afterSubdivision = colored.length;
   }
 
-  // 4. recenter
-  if (params.center && colored.length) {
+  // 4. bounds for stats — the model origin is preserved (no recentering)
+  if (colored.length) {
     let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;
     for (const t of colored) for (const q of t.p) {
       if (q.x < minX) minX = q.x; if (q.x > maxX) maxX = q.x;
       if (q.y < minY) minY = q.y; if (q.y > maxY) maxY = q.y;
       if (q.z < minZ) minZ = q.z; if (q.z > maxZ) maxZ = q.z;
     }
-    const off = v3(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
-    for (const t of colored) t.p = t.p.map((q) => add(q, off));
     stats.bounds = {
       x: round6(maxX - minX), y: round6(maxY - minY), z: round6(maxZ - minZ),
     };
-    stats.centerOffset = { x: off.x, y: off.y, z: off.z };
   }
 
   // 5. + 6. merge & primitives
@@ -549,8 +542,10 @@ export function convert(input, userParams = {}) {
 
 // ---------- shared tail: scale cap -> budget -> stats -> decorations ----------
 
-function recenterPlacements(placements, params, stats) {
-  if (!params.center || !placements.length) return;
+// Bounds for stats only — placements are never repositioned, so the model
+// origin the user set up in the editor is preserved exactly.
+function measurePlacements(placements, stats) {
+  if (!placements.length) return;
   let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;
   for (const p of placements) {
     const R = p.rotation;
@@ -561,12 +556,9 @@ function recenterPlacements(placements, params, stats) {
     minY = Math.min(minY, p.position.y - ext[1]); maxY = Math.max(maxY, p.position.y + ext[1]);
     minZ = Math.min(minZ, p.position.z - ext[2]); maxZ = Math.max(maxZ, p.position.z + ext[2]);
   }
-  const off = v3(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
-  for (const p of placements) p.position = add(p.position, off);
   stats.bounds = {
     x: round6(maxX - minX), y: round6(maxY - minY), z: round6(maxZ - minZ),
   };
-  stats.centerOffset = { x: off.x, y: off.y, z: off.z };
 }
 
 function finishPlacements(placements, params, stats) {
@@ -653,6 +645,7 @@ function convertSpriteBoxes(sprite, params, stats, ctx) {
     R = R.map((row, i) => row.map((v, j) => v * ((i === 2) !== (j === 2) ? -1 : 1)));
   }
 
+  const s = ctx.userS ?? 1;
   let placements = boxes.map((b) => {
     let c = ctx.userXform(b.center);
     if (params.flipZ) c = v3(c.x, c.y, -c.z);
@@ -661,32 +654,16 @@ function convertSpriteBoxes(sprite, params, stats, ctx) {
       fullY: true,
       position: c,
       rotation: R,
-      scale: v3(b.size.x, b.size.y, b.size.z),
+      scale: v3(b.size.x * s, b.size.y * s, b.size.z * s),
       color: b.color,
-      area: Math.max(b.size.x * b.size.y, b.size.x * b.size.z, b.size.y * b.size.z),
+      area: s * s * Math.max(b.size.x * b.size.y, b.size.x * b.size.z, b.size.y * b.size.z),
     };
   });
   stats.afterDecimation = placements.length;
   stats.afterSubdivision = placements.length;
   stats.afterMerge = placements.length;
 
-  if (params.center && placements.length) {
-    let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;
-    for (const p of placements) {
-      const h = [p.scale.x / 2, p.scale.y / 2, p.scale.z / 2];
-      const ext = [0, 1, 2].map((i) =>
-        Math.abs(R[i][0]) * h[0] + Math.abs(R[i][1]) * h[1] + Math.abs(R[i][2]) * h[2]);
-      minX = Math.min(minX, p.position.x - ext[0]); maxX = Math.max(maxX, p.position.x + ext[0]);
-      minY = Math.min(minY, p.position.y - ext[1]); maxY = Math.max(maxY, p.position.y + ext[1]);
-      minZ = Math.min(minZ, p.position.z - ext[2]); maxZ = Math.max(maxZ, p.position.z + ext[2]);
-    }
-    const off = v3(-(minX + maxX) / 2, -minY, -(minZ + maxZ) / 2);
-    for (const p of placements) p.position = add(p.position, off);
-    stats.bounds = {
-      x: round6(maxX - minX), y: round6(maxY - minY), z: round6(maxZ - minZ),
-    };
-    stats.centerOffset = { x: off.x, y: off.y, z: off.z };
-  }
+  measurePlacements(placements, stats);
 
   return finishPlacements(placements, params, stats);
 }
