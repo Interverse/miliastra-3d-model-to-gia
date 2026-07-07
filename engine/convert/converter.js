@@ -32,7 +32,8 @@ import { capPlacements, MAX_ZOOM } from './cap.js';
 
 export const DEFAULT_PARAMS = {
   unitScale: 1,          // multiply source units to get meters
-  flipZ: true,           // three.js style (-Z forward) -> target Y-up +Z-forward
+  flipZ: false,          // mirror across Z (game shares the source Z convention;
+                         // enable only if a model imports front-to-back flipped)
   snapDeg: 1,            // treat angles within this of 90° as right angles
   colorTolerance: 30,    // 0..441 RGB euclidean; merge threshold
   maxSubdiv: 3,          // max texture-driven subdivision depth (4^d growth)

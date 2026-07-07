@@ -202,9 +202,9 @@ export function renderShell(root, {
           <span>Thickness scale</span>
           <input type="number" id="p-thin" value="0.01" min="0.01" max="10" step="0.05">
         </label>
-        <label class="row" title="Converts from the right-handed -Z-forward convention (glTF/three.js) to the target's Y-up +Z-forward — leave on unless your model imports mirrored">
-          <span>Flip Z (to Z-forward)</span>
-          <input type="checkbox" id="p-flipz" checked>
+        <label class="row" title="Mirrors the model across the Z axis — the game uses the same Z convention as the source model, so leave this off unless your model imports front-to-back flipped">
+          <span>Flip Z (mirror)</span>
+          <input type="checkbox" id="p-flipz">
         </label>
         <label class="row" title="Order in which rotation angles are applied when reconstructing orientations — switch to XYZ if rotated primitives look skewed in the target engine">
           <span>Euler order</span>

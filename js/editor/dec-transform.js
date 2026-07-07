@@ -16,7 +16,7 @@ export const r4 = (v) => Math.round(v * 10000) / 10000;
 
 export function displayContext(recon, offsetOf) {
   const off = offsetOf(recon) ?? { x: 0, y: 0, z: 0 };
-  const flip = (recon.params?.flipZ ?? true) ? -1 : 1;
+  const flip = (recon.params?.flipZ ?? false) ? -1 : 1;
   const order = recon.params?.eulerOrder === "XYZ" ? "XYZ" : "YXZ";
   return { off, flip, order };
 }
