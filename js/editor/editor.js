@@ -502,7 +502,11 @@ export function createEditor({ viewer, ctx }) {
     const color = parseInt($("ed-color").value.slice(1), 16);
     const scale =
       kind === "triangle"
-        ? { x: 0.01, y: r4(s * 7.7), z: r4(s * 3.704) }
+        ? {
+            x: 0.01,
+            y: Math.round((s * 100) / 13 * 1e6) / 1e6,
+            z: Math.round((s * 100) / 27 * 1e6) / 1e6,
+          }
         : kind === "plane"
           ? { x: s * 10, y: 1, z: s * 10 }
           : kind === "prism"

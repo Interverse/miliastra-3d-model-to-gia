@@ -129,12 +129,15 @@ all three components are always written (even 1.0).
   samples alone).
 - Scale: per-axis.
   - **Triangle v2 (20001925, current reference — White Triangle v2.gia)**:
-    right-angle corner at the local origin, legs of 1/7.7 m along local +Y
-    and 1/3.704 m along local **-Z** at scale 1, thin along local X (half
-    the thickness of 20002125). `scale_y = leg1_m * 7.7`,
-    `scale_z = leg2_m * 3.704`. The canonical 1×1 m sample is encoded as
-    rotation (0, 180, 0) with scale (1, 7.7, 3.704) — the Ry(180) maps the
-    -Z leg onto +Z.
+    right-angle corner at the local origin, legs of exactly 0.13 m along
+    local +Y and 0.27 m along local **-Z** at scale 1, thin along local X
+    (half the thickness of 20002125). `scale_y = leg1_m * 100/13`,
+    `scale_z = leg2_m * 100/27`. The published zooms 7.7 and 3.704 are 1-
+    and 3-decimal roundings of 100/13 (7.692308) and 100/27 (3.703704);
+    the roundings leave a ~1 mm/m seam when two triangles tile a square.
+    Calibrated empirically against a 1×1 m two-triangle assembly. The
+    canonical 1×1 m sample is encoded as rotation (0, 180, 0) with scale
+    (1, 7.7, 3.704) — the Ry(180) maps the -Z leg onto +Z.
   - **Triangle v1 (20002125, legacy)**: 0.5 m legs (5 local units) along
     local +Y and +Z at scale 1, right-angle corner at the local origin, thin
     along local X. `scale_yz = leg_meters * 2`. X scale controls thickness.

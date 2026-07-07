@@ -98,7 +98,7 @@ export function mergeAdjacent(decorations, { colorTolerance = 0, eulerOrder = "Y
 // Largest face area — comparable "visual importance" proxy across kinds.
 export function sizeProxy(d) {
   const { x, y, z } = d.scale;
-  if (d.kind === "triangle") return (y / 7.7) * (z / 3.704) * 50; // leg area, rescaled
+  if (d.kind === "triangle") return (y * 0.13) * (z * 0.27) * 50; // leg area, rescaled
   if (d.kind === "plane") return x * z;
   return Math.max(x * y, y * z, x * z);
 }

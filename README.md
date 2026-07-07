@@ -68,9 +68,12 @@ sampling, subdivision decisions, preview overlay, and the generated `.gia`.
 ## How it works
 
 Each source triangle is reproduced by placing the canonical right-triangle
-decoration model (v2 reference, model 20001925: legs of 1/7.7 m along local
-+Y and 1/3.704 m along local -Z at scale 1, thin X axis, right-angle corner
-at the origin) with a position, per-axis scale, and Euler rotation:
+decoration model (v2 reference, model 20001925: legs of exactly 0.13 m along
+local +Y and 0.27 m along local -Z at scale 1 — zoom = meters × 100/13 and
+× 100/27, calibrated so two triangles tile a 1×1 m square seam-free; the
+published 7.7/3.704 are roundings that leave ~1 mm/m gaps — thin X axis,
+right-angle corner at the origin) with a position, per-axis scale, and Euler
+rotation:
 
 1. **Extract** mesh geometry (world-transformed, triangulated). Animations,
    skeletons, cameras, and lights are ignored.

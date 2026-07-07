@@ -80,7 +80,7 @@ function vec3(w, field, v, skipZero) {
 
 const OBJECT_TEMPLATE_ID = 10005018;   // MPActionGroup
 const TRIANGLE_MODEL_ID = 20001925;    // right-triangle model (v2 reference,
-                                       // legs 1/7.7 m +Y and 1/3.704 m -Z)
+                                       // legs 0.13 m +Y, 0.27 m -Z per zoom)
 const LEGACY_TRIANGLE_MODEL_ID = 20002125; // old v1 triangle (0.5 m legs +Y/+Z)
 const SQUARE_MODEL_ID = 10009001;      // square/cube decoration (0.1 m/axis @1)
 

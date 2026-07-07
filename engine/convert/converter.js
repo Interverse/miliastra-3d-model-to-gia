@@ -142,12 +142,15 @@ function subdivideForColor(tri, mesh, params, depth, out, budget, stats) {
 
 // ---------- placements -> decoration records ----------
 
-// Triangle reference model (White Triangle v2.gia, model 20001925):
-// right-angle corner at the local origin, legs of 1/7.7 m along local +Y and
-// 1/3.704 m along local -Z at scale 1, thin on local X (half the thickness
-// of the old 20002125 model). scale_y = leg1_m * 7.7, scale_z = leg2_m * 3.704.
-export const TRI_SCALE_Y_PER_M = 7.7;
-export const TRI_SCALE_Z_PER_M = 3.704;
+// Triangle reference model (White Triangle v2, model 20001925):
+// right-angle corner at the local origin, legs along local +Y and -Z, thin
+// on local X. CALIBRATED true leg lengths at zoom 1: exactly 0.13 m (+Y)
+// and 0.27 m (-Z) — the historically published zooms 7.7 and 3.704 are
+// roundings of 100/13 and 100/27 at 1 and 3 decimals and leave a ~1 mm
+// seam per meter when two triangles tile a square. The exact fractions
+// close the assembled square with zero gap/overlap.
+export const TRI_SCALE_Y_PER_M = 100 / 13; // 7.692307...
+export const TRI_SCALE_Z_PER_M = 100 / 27; // 3.703703...
 
 export function placementToDecoration(pl, params) {
   let rot = pl.rotation;
@@ -219,7 +222,7 @@ export function placementToDecoration(pl, params) {
       };
       break;
     default:
-      // v2 triangle: legs 1/7.7 m (+Y) and 1/3.704 m (-Z) at scale 1
+      // calibrated triangle: zoom = leg1_m * 100/13, leg2_m * 100/27
       base.scale = {
         x: params.thinScale,
         y: round6(pl.scale.y * TRI_SCALE_Y_PER_M),

@@ -139,7 +139,8 @@ export function buildPreview(decorations, params) {
         break;
       }
       default: {
-        const a = d.scale.y / 7.7, bb = d.scale.z / 3.704;
+        // calibrated legs: exactly 0.13 m / 0.27 m per zoom unit
+        const a = d.scale.y * 0.13, bb = d.scale.z * 0.27;
         pushTri(xf(0, 0, 0), xf(0, a, 0), xf(0, 0, -bb));
       }
     }
