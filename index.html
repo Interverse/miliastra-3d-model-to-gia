@@ -17,13 +17,11 @@
 <body>
 <div id="app-root"></div>
 <script type="module">
+  import { initI18n } from './js/i18n.js';
   import { renderShell } from './js/ui-shell.js';
   import { initApp } from './js/app.js';
-  renderShell(document.getElementById('app-root'), {
-    primitives: false,
-    primitivesHref: 'gia/index.html',
-    docsHref: 'docs/gia-format.md',
-  });
+  await initI18n(); // load the saved/detected language before first render
+  renderShell(document.getElementById('app-root'), { primitives: false });
   initApp({ mode: 'gia' });
 </script>
 </body>

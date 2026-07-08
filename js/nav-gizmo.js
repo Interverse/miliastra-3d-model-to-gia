@@ -7,18 +7,19 @@
 // camera space each frame and drawn as depth-sorted knobs.
 
 import * as THREE from "three";
+import { t, onLangChange } from "./i18n.js";
 
 const AXES = [
   // display space mirrors X vs the game axes: the game's +X lies toward
   // display -X, so the "X / Right" knob points at display (-1, 0, 0)
-  { dir: new THREE.Vector3(-1, 0, 0), label: "X", color: "#e5534b", view: "Right" },
-  { dir: new THREE.Vector3(1, 0, 0), label: "-X", color: "#e5534b", view: "Left" },
-  { dir: new THREE.Vector3(0, 1, 0), label: "Y", color: "#57ab5a", view: "Top" },
-  { dir: new THREE.Vector3(0, -1, 0), label: "-Y", color: "#57ab5a", view: "Bottom" },
+  { dir: new THREE.Vector3(-1, 0, 0), label: "X", color: "#e5534b", view: "view.right" },
+  { dir: new THREE.Vector3(1, 0, 0), label: "-X", color: "#e5534b", view: "view.left" },
+  { dir: new THREE.Vector3(0, 1, 0), label: "Y", color: "#57ab5a", view: "view.top" },
+  { dir: new THREE.Vector3(0, -1, 0), label: "-Y", color: "#57ab5a", view: "view.bottom" },
   // corrected axes: +Z is the model's forward, so the Front view looks
   // along +Z from the -Z side
-  { dir: new THREE.Vector3(0, 0, 1), label: "Z", color: "#539bf5", view: "Back" },
-  { dir: new THREE.Vector3(0, 0, -1), label: "-Z", color: "#539bf5", view: "Front" },
+  { dir: new THREE.Vector3(0, 0, 1), label: "Z", color: "#539bf5", view: "view.back" },
+  { dir: new THREE.Vector3(0, 0, -1), label: "-Z", color: "#539bf5", view: "view.front" },
 ];
 
 export function createNavGizmo(viewer) {
@@ -158,8 +159,8 @@ export function createNavGizmo(viewer) {
     if (k !== hovered) {
       hovered = k;
       canvas.title = k >= 0
-        ? `${AXES[k].view} view`
-        : "Camera orientation — click an axis to snap the view, drag to orbit";
+        ? t("nav.viewtitle", { v: t(AXES[k].view) })
+        : t("tip.nav");
     }
   });
   canvas.addEventListener("pointerup", (ev) => {
@@ -178,15 +179,17 @@ export function createNavGizmo(viewer) {
     hovered = -1;
   });
 
-  // projection toggle
+  // projection toggle (label is language-dependent, so it is managed here —
+  // ui-shell leaves the button unbound and i18n re-syncs it on switch)
   const syncBtn = () => {
-    btn.textContent = viewer.projection === "ortho" ? "Ortho" : "Persp";
+    btn.textContent = t(viewer.projection === "ortho" ? "nav.ortho" : "nav.persp");
   };
   btn.addEventListener("click", () => {
     viewer.setProjection(viewer.projection === "ortho" ? "persp" : "ortho");
     syncBtn();
   });
   syncBtn();
+  onLangChange(syncBtn);
 
   viewer.addTick(draw);
   draw();

@@ -21,6 +21,7 @@ import {
 } from "../engine/gia/gia-writer.js";
 import { PRESETS } from "../engine/convert/converter.js";
 import { decimateTriangles } from "../engine/convert/decimate.js";
+import { t, num, onLangChange } from "./i18n.js";
 
 // Initialize the app against an already-rendered shell (see ui-shell.js).
 // mode: 'gia' (download button builds a .gia file) or 'primitives' (the
@@ -101,6 +102,7 @@ export function initApp({ mode = "gia" } = {}) {
 
   let currentObject = null; // three.js object
   let currentName = "model";
+  let modelInfo = null; // raw data behind the "1. Model" stat grid
   let extracted = null; // { meshes, triangleCount }
   let lastResult = null; // worker result
   let lastParams = null; // params used for lastResult
@@ -285,7 +287,7 @@ export function initApp({ mode = "gia" } = {}) {
       updateTextureList();
     } catch (err) {
       console.error(err);
-      alert("Failed to load model: " + err.message);
+      alert(t("err.load", { msg: err.message }));
     }
   }
 
@@ -325,10 +327,10 @@ export function initApp({ mode = "gia" } = {}) {
     const el = $("texture-list");
     el.innerHTML = "";
     const labels = {
-      used: "used by material",
-      applied: "applied (no map)",
-      staged: currentModelName ? "not referenced" : "waiting for model",
-      sprite: "3D sprite source",
+      used: t("tex.used"),
+      applied: t("tex.applied"),
+      staged: currentModelName ? t("tex.staged") : t("tex.waiting"),
+      sprite: t("tex.sprite"),
     };
     let stagedImages = 0;
     for (const [name] of fileLibrary) {
@@ -433,16 +435,20 @@ export function initApp({ mode = "gia" } = {}) {
       viewer.setModel(plane);
       editor.refresh();
       $("drop-hint").hidden = true;
-      renderStats($("model-info"), {
-        Sprite: file.name,
-        Pixels: `${spritePixels.width} × ${spritePixels.height}`,
-        "Size (m)": `${w.toFixed(2)} × ${h.toFixed(2)}`,
-      });
+      modelInfo = {
+        type: "sprite",
+        name: file.name,
+        w: spritePixels.width,
+        h: spritePixels.height,
+        wm: w,
+        hm: h,
+      };
+      renderModelInfo();
       renderStats($("gen-stats"), {});
       updateTextureList();
     } catch (e) {
       console.error(e);
-      alert("Could not read image: " + e.message);
+      alert(t("err.image", { msg: e.message }));
     }
   });
 
@@ -460,6 +466,7 @@ export function initApp({ mode = "gia" } = {}) {
     currentObject = null;
     displayedObject = null;
     extracted = null;
+    modelInfo = null;
     viewer.setModel(null);
     editor.refresh();
     clearReconstructions();
@@ -616,11 +623,13 @@ export function initApp({ mode = "gia" } = {}) {
     $("drop-hint").hidden = true;
     extracted = extractMeshes(object);
     $("btn-generate").disabled = false;
-    renderStats($("model-info"), {
-      Meshes: extracted.meshCount,
-      "Source triangles": extracted.triangleCount.toLocaleString(),
-      Textured: extracted.meshes.some((m) => m.texture) ? "yes" : "no",
-    });
+    modelInfo = {
+      type: "model",
+      meshes: extracted.meshCount,
+      tris: extracted.triangleCount,
+      textured: extracted.meshes.some((m) => m.texture),
+    };
+    renderModelInfo();
     renderStats($("gen-stats"), {});
     // texture editing panel: unique textures of the extracted meshes
     const seen = new Set();
@@ -661,7 +670,7 @@ export function initApp({ mode = "gia" } = {}) {
   };
   $("p-decimate").addEventListener("input", () => {
     const v = parseInt($("p-decimate").value, 10);
-    $("v-decimate").textContent = v === 0 ? "off" : v + "%";
+    $("v-decimate").textContent = v === 0 ? t("val.off") : num(v) + "%";
     scheduleDecimPreview();
   });
   for (const [id, label] of [
@@ -722,7 +731,7 @@ export function initApp({ mode = "gia" } = {}) {
     $("t-scale").value = 1;
     $("p-unit").value = 1;
     applyUserTransformPreview();
-    showToast("Transform reset");
+    showToast(t("t.reset"));
   });
   for (const [key, el] of Object.entries(paramInputs)) {
     el.addEventListener("input", () => {
@@ -791,7 +800,7 @@ export function initApp({ mode = "gia" } = {}) {
     if ((!extracted && !spriteImageName) || busy) return;
     busy = true;
     $("btn-generate").disabled = true;
-    $("btn-generate").textContent = "Converting…";
+    $("btn-generate").textContent = t("btn.converting");
     $("progress").hidden = false;
     $("progress-bar").style.width = "30%";
     const params = readParams();
@@ -814,37 +823,45 @@ export function initApp({ mode = "gia" } = {}) {
 
   // ---------- reconstructions (each generation kept + toggleable) ----------
 
-  let reconstructions = []; // {id,label,msg,params,visible}
+  let reconstructions = []; // {id,kind,extra,msg,params,visible}
   let activeReconId = null;
   let reconSeq = 0;
-  const MODE_LABELS = {
-    direct: "Direct",
-    voxel: "Voxel",
-    pixel: "Pixel Perfect",
-  };
+
+  // Reconstruction labels are rebuilt from parts on every render so they
+  // follow the active language.
+  function reconLabel(e) {
+    const base =
+      e.kind === "sprite"
+        ? t("recon.sprite")
+        : e.kind === "edited"
+          ? t("recon.edited")
+          : t("mode." + e.kind);
+    return `${base}${e.extra ?? ""} #${e.id}`;
+  }
 
   worker.onmessage = (ev) => {
     const msg = ev.data;
     if (msg.jobId !== jobId) return;
     busy = false;
     $("btn-generate").disabled = false;
-    $("btn-generate").textContent = "Generate";
+    $("btn-generate").textContent = t("btn.generate");
     $("progress").hidden = true;
     $("progress-bar").style.width = "0";
     if (!msg.ok) {
-      alert("Conversion failed: " + msg.error);
+      alert(t("err.convert", { msg: msg.error }));
       return;
     }
     const id = ++reconSeq;
     const p = lastParams ?? {};
-    let label = MODE_LABELS[p.mode] ?? "Direct";
-    if (spriteImageName) label = "Sprite";
-    else if (p.mode === "voxel") label += ` ${p.voxelRes}${p.voxelSurface === "mc" ? " MC" : ""}`;
-    else if (p.mode === "direct" && p.primitiveMode === "both") label += " +squares";
+    let kind = ["direct", "voxel", "pixel"].includes(p.mode) ? p.mode : "direct";
+    let extra = "";
+    if (spriteImageName) kind = "sprite";
+    else if (p.mode === "voxel") extra = ` ${p.voxelRes}${p.voxelSurface === "mc" ? " MC" : ""}`;
+    else if (p.mode === "direct" && p.primitiveMode === "both") extra = " +squares";
     // a new generation hides the previous reconstructions so only the fresh
     // result is visible (they can be re-enabled from the list)
     for (const r of reconstructions) r.visible = false;
-    reconstructions.push({ id, label: `${label} #${id}`, msg, params: p, visible: true });
+    reconstructions.push({ id, kind, extra, msg, params: p, visible: true });
     if (reconstructions.length > 8) {
       const removed = reconstructions.shift();
       if (removed.id === activeReconId) activeReconId = null;
@@ -879,7 +896,7 @@ export function initApp({ mode = "gia" } = {}) {
       const vis = document.createElement("input");
       vis.type = "checkbox";
       vis.checked = e.visible;
-      vis.title = "Show/hide this reconstruction in the viewport";
+      vis.title = t("tip.recon.show");
       vis.addEventListener("change", () => {
         e.visible = vis.checked;
         updateOverlays();
@@ -888,20 +905,20 @@ export function initApp({ mode = "gia" } = {}) {
       act.type = "radio";
       act.name = "recon-active";
       act.checked = e.id === activeReconId;
-      act.title = "Use this reconstruction for the output";
+      act.title = t("tip.recon.use");
       act.addEventListener("change", () => {
         if (act.checked) setActiveRecon(e.id);
       });
       const label = document.createElement("span");
       label.className = "recon-label";
-      label.textContent = e.label;
+      label.textContent = reconLabel(e);
       const count = document.createElement("span");
       count.className = "recon-count";
-      count.textContent = e.msg.decorations.length.toLocaleString();
+      count.textContent = num(e.msg.decorations.length);
       const del = document.createElement("button");
       del.className = "recon-del";
       del.textContent = "✕";
-      del.title = "Remove this reconstruction";
+      del.title = t("tip.recon.del");
       del.addEventListener("click", () => {
         reconstructions = reconstructions.filter((r) => r.id !== e.id);
         if (activeReconId === e.id) {
@@ -922,77 +939,76 @@ export function initApp({ mode = "gia" } = {}) {
     updateOverlays();
   }
 
+  function renderModelInfo() {
+    const el = $("model-info");
+    if (!modelInfo) {
+      renderStats(el, {});
+      return;
+    }
+    if (modelInfo.type === "sprite") {
+      renderStats(el, {
+        [t("mi.sprite")]: modelInfo.name,
+        [t("mi.pixels")]: `${num(modelInfo.w)} × ${num(modelInfo.h)}`,
+        [t("mi.size")]: `${num(modelInfo.wm, { maximumFractionDigits: 2 })} × ${num(modelInfo.hm, { maximumFractionDigits: 2 })}`,
+      });
+    } else {
+      renderStats(el, {
+        [t("mi.meshes")]: num(modelInfo.meshes),
+        [t("mi.tris")]: num(modelInfo.tris),
+        [t("mi.textured")]: modelInfo.textured ? t("misc.yes") : t("misc.no"),
+      });
+    }
+  }
+
   function renderGenStats(s, p) {
     const models = Math.ceil(s.placements / MAX_DECORATIONS_PER_MODEL);
-    const KIND_LABELS = {
-      triangle: "Triangles", square: "Cuboids", plane: "Planes",
-      sphere: "Spheres", cylinder: "Cylinders", cone: "Cones", prism: "Prisms",
-    };
     const kindRows = {};
     if (s.byKind && Object.keys(s.byKind).length > 1) {
       for (const [k, n] of Object.entries(s.byKind)) {
-        kindRows[KIND_LABELS[k] ?? k] = n.toLocaleString();
+        kindRows[t("kp." + k)] = num(n);
       }
     }
     renderStats($("gen-stats"), {
-      [s.spritePixels != null ? "Opaque pixels" : "Source triangles"]:
-        s.sourceTriangles.toLocaleString(),
-      ...(p?.decimate > 0
-        ? { "After decimation": s.afterDecimation.toLocaleString() }
-        : {}),
+      [t(s.spritePixels != null ? "gs.opaque" : "mi.tris")]:
+        num(s.sourceTriangles),
+      ...(p?.decimate > 0 ? { [t("gs.afterdec")]: num(s.afterDecimation) } : {}),
       ...(p?.mode === "voxel"
         ? {
-            Voxels: (s.voxels ?? 0).toLocaleString(),
-            ...(s.voxelsCulled
-              ? { "Interior culled": s.voxelsCulled.toLocaleString() }
-              : {}),
+            [t("gs.voxels")]: num(s.voxels ?? 0),
+            ...(s.voxelsCulled ? { [t("gs.culled")]: num(s.voxelsCulled) } : {}),
             ...(s.sdfCells
-              ? { "MC cells": s.sdfCells.toLocaleString(),
-                  "Surface triangles": s.afterSubdivision.toLocaleString() }
+              ? { [t("gs.mccells")]: num(s.sdfCells),
+                  [t("gs.surftris")]: num(s.afterSubdivision) }
               : {}),
-            "Voxel size (m)": s.voxelSize,
+            [t("gs.voxsize")]: num(s.voxelSize, { maximumFractionDigits: 4 }),
           }
         : p?.mode === "pixel"
           ? {
-              Texels: (s.texels ?? 0).toLocaleString(),
-              "After merge": s.afterMerge.toLocaleString(),
+              [t("gs.texels")]: num(s.texels ?? 0),
+              [t("gs.aftermerge")]: num(s.afterMerge),
             }
           : {
-              "After subdivision": s.afterSubdivision.toLocaleString(),
-              "After merge": s.afterMerge.toLocaleString(),
+              [t("gs.aftersub")]: num(s.afterSubdivision),
+              [t("gs.aftermerge")]: num(s.afterMerge),
             }),
-      Decorations: s.placements.toLocaleString(),
+      [t("gs.decs")]: num(s.placements),
       ...kindRows,
       ...(s.squareApprox
-        ? {
-            "Square approximations": {
-              value: s.squareApprox.toLocaleString(),
-              warn: true,
-            },
-          }
+        ? { [t("gs.sqapprox")]: { value: num(s.squareApprox), warn: true } }
         : {}),
-      "Unique colors": s.uniqueColors,
-      "Models (≤999 each)": models,
-      ...(s.capSplit
-        ? { "Split for zoom ≤ 50": s.capSplit.toLocaleString() }
-        : {}),
-      ...(s.budgetMerged
-        ? { "Merged for budget": s.budgetMerged.toLocaleString() }
-        : {}),
+      [t("gs.colors")]: num(s.uniqueColors),
+      [t("gs.models")]: num(models),
+      ...(s.capSplit ? { [t("gs.capsplit")]: num(s.capSplit) } : {}),
+      ...(s.budgetMerged ? { [t("gs.budgetmerged")]: num(s.budgetMerged) } : {}),
       ...(s.transparentSkipped
-        ? { "Transparent skipped": s.transparentSkipped.toLocaleString() }
+        ? { [t("gs.transparent")]: num(s.transparentSkipped) }
         : {}),
       ...(s.dropped
-        ? {
-            "Dropped (budget)": {
-              value: s.dropped.toLocaleString(),
-              warn: true,
-            },
-          }
+        ? { [t("gs.dropped")]: { value: num(s.dropped), warn: true } }
         : {}),
-      ...(s.degenerate ? { "Degenerate skipped": s.degenerate } : {}),
+      ...(s.degenerate ? { [t("gs.degenerate")]: num(s.degenerate) } : {}),
       ...(s.bounds
-        ? { "Size (m)": `${s.bounds.x} × ${s.bounds.y} × ${s.bounds.z}` }
+        ? { [t("mi.size")]: `${s.bounds.x} × ${s.bounds.y} × ${s.bounds.z}` }
         : {}),
     });
   }
@@ -1053,7 +1069,8 @@ export function initApp({ mode = "gia" } = {}) {
     for (const r of reconstructions) r.visible = false;
     reconstructions.push({
       id,
-      label: `Edited #${id}`,
+      kind: "edited",
+      extra: "",
       msg: { decorations, stats, positions, colors, owners },
       params: e.params,
       visible: true,
@@ -1061,7 +1078,7 @@ export function initApp({ mode = "gia" } = {}) {
     setActiveRecon(id);
     renderReconList();
     updateOverlays();
-    showToast("Saved as new model");
+    showToast(t("t.saved"));
   });
 
   // clear all generated models (source model stays)
@@ -1090,7 +1107,7 @@ export function initApp({ mode = "gia" } = {}) {
       if ($("output-summary")) {
         $("output-summary").textContent =
           ready && lastResult
-            ? `${lastResult.decorations.length} primitive(s) generated`
+            ? t("out.summary", { n: num(lastResult.decorations.length) })
             : "";
       }
     }
@@ -1145,7 +1162,7 @@ export function initApp({ mode = "gia" } = {}) {
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = !!processed[i];
-      cb.title = "Mark as manually processed";
+      cb.title = t("tip.processed");
       cb.addEventListener("change", () => {
         processed[i] = cb.checked;
         tr.classList.toggle("done", cb.checked);
@@ -1156,7 +1173,7 @@ export function initApp({ mode = "gia" } = {}) {
       // [text, groupStart?]
       const cells = [
         [String(i + 1)],
-        [modelName(d)],
+        [t("kind." + (d.kind ?? "triangle"))],
         [String(modelId(d))],
         [d.kind],
         [fmtNum(d.position.x), true],
@@ -1191,7 +1208,7 @@ export function initApp({ mode = "gia" } = {}) {
     const more = $("btn-more-rows");
     more.hidden = renderedRows >= decs.length;
     if (!more.hidden)
-      more.textContent = `Show remaining ${decs.length - renderedRows} rows`;
+      more.textContent = t("modal.more", { n: num(decs.length - renderedRows) });
   }
 
   // double-click any value cell to copy just that value
@@ -1202,9 +1219,9 @@ export function initApp({ mode = "gia" } = {}) {
     if (!value) return;
     try {
       await navigator.clipboard.writeText(value);
-      showToast(`Copied ${value}`);
+      showToast(t("t.copiedval", { v: value }));
     } catch (err) {
-      showToast("Clipboard unavailable");
+      showToast(t("t.clipboard"));
     }
   });
 
@@ -1224,11 +1241,10 @@ export function initApp({ mode = "gia" } = {}) {
 
   $("btn-view-prims")?.addEventListener("click", () => {
     if (!lastResult) return;
-    $("prim-count").textContent = `${lastResult.decorations.length} primitives`;
-    $("prim-note").textContent =
-      "In the game, create an Empty Model with an XYZ zoom of 0.1 and add these primitives to it. " +
-      "Position and zoom are in units of 0.1 m; rotation is in degrees. " +
-      "Double-click any value to copy it to the clipboard.";
+    $("prim-count").textContent = t("modal.count", {
+      n: num(lastResult.decorations.length),
+    });
+    $("prim-note").textContent = t("modal.note");
     if (renderedRows === 0) appendRows();
     $("prim-modal").hidden = false;
     // pin the X/Y/Z subheader row exactly below the group header row so no
@@ -1272,12 +1288,12 @@ export function initApp({ mode = "gia" } = {}) {
       await navigator.clipboard.writeText(
         JSON.stringify(primitivesJson(), null, 1),
       );
-      $("btn-copy-json").textContent = "Copied ✓";
+      $("btn-copy-json").textContent = t("modal.copied");
       setTimeout(() => {
-        $("btn-copy-json").textContent = "Copy JSON";
+        $("btn-copy-json").textContent = t("modal.copyjson");
       }, 1500);
     } catch (e) {
-      alert("Clipboard unavailable: " + e.message);
+      alert(t("err.clipboard", { msg: e.message }));
     }
   });
 
@@ -1300,6 +1316,27 @@ export function initApp({ mode = "gia" } = {}) {
   // camera navigation gizmo + projection switching
   createNavGizmo(viewer);
   viewer.onProjectionChange = (cam) => editor.onCameraChanged(cam);
+
+  // live language switching: re-render everything dynamic (the static shell
+  // is re-applied by i18n itself via data-i18n bindings)
+  onLangChange(() => {
+    if (busy) $("btn-generate").textContent = t("btn.converting");
+    const v = parseInt($("p-decimate").value, 10) || 0;
+    $("v-decimate").textContent = v === 0 ? t("val.off") : num(v) + "%";
+    renderModelInfo();
+    updateTextureList();
+    renderReconList();
+    const e = activeRecon();
+    if (e) renderGenStats(e.msg.stats, e.params);
+    else renderStats($("gen-stats"), {});
+    if ($("output-summary")) {
+      $("output-summary").textContent =
+        lastResult && !$("ed-save").disabled
+          ? t("out.summary", { n: num(lastResult.decorations.length) })
+          : "";
+    }
+    editor.refresh(); // selection info, statistics, warnings, status bar
+  });
 
   editor.refresh(); // initial UI state (empty scene)
 } // end initApp

@@ -30,12 +30,28 @@ body {
 *::-webkit-scrollbar-corner {
   background: #1b1e24;
 }
+/* Base stack covers Latin, Cyrillic, Vietnamese (all system UI fonts carry
+   full Vietnamese diacritics), plus broad CJK and Thai fallbacks so every
+   supported language renders on Windows, macOS, Linux, and mobile. */
 body {
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family:
+    "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", "PingFang SC", "Hiragino Sans", "Microsoft YaHei",
+    "Microsoft JhengHei", "Yu Gothic UI", Meiryo, "Malgun Gothic",
+    "Apple SD Gothic Neo", "Leelawadee UI", Thonburi, "Noto Sans Thai",
+    sans-serif;
   background: #14161a;
   color: #d8dbe0;
   font-size: 14px;
 }
+/* Language-specific preferred fonts (html[lang] is set by the i18n system) */
+:lang(zh-Hans) { font-family: "Segoe UI", system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+:lang(zh-Hant) { font-family: "Segoe UI", system-ui, "PingFang TC", "Hiragino Sans CNS", "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
+:lang(ja) { font-family: "Segoe UI", system-ui, "Hiragino Sans", "Yu Gothic UI", Meiryo, "Noto Sans JP", sans-serif; }
+:lang(ko) { font-family: "Segoe UI", system-ui, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+:lang(th) { font-family: "Segoe UI", system-ui, "Leelawadee UI", Thonburi, "Noto Sans Thai", sans-serif; }
+/* Thai stacked diacritics need extra line height to avoid clipping */
+:lang(th) body, :lang(th) .row span, :lang(th) button, :lang(th) .hint2 { line-height: 1.6; }
 #app {
   display: flex;
   height: 100vh;
@@ -241,6 +257,9 @@ button.mini.danger:hover:not(:disabled) {
 }
 .row span {
   flex: 1;
+  /* long translated labels wrap instead of overflowing the sidebar */
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .row[title],
 .row-triple[title] {
@@ -302,6 +321,8 @@ details summary {
 .row-triple span {
   font-size: 12px;
   color: #9aa3b0;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .row-triple input {
   width: 100%;
@@ -672,6 +693,22 @@ footer {
 }
 footer a {
   color: #7ec8ff;
+}
+/* language selector pinned at the top of the sidebar, above all panels */
+#lang-row {
+  text-align: left;
+  font-size: 12px;
+  color: #9aa3b0;
+  margin: 0 0 2px;
+  flex-shrink: 0;
+}
+#lang-row select {
+  background: #14161a;
+  color: #d8dbe0;
+  border: 1px solid #3a4150;
+  border-radius: 4px;
+  padding: 4px 6px;
+  max-width: 170px;
 }
 
 h1 .badge {

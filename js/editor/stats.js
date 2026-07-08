@@ -1,5 +1,11 @@
 // Live editing statistics + .gia limit warnings for the Statistics panel
 // and the viewport status bar.
+//
+// Warnings are returned as { key, params } descriptors and rendered through
+// i18n by the caller. KIND_LABELS stays English — it is the canonical
+// in-game model name used in the JSON export (UI display uses t("kind.*")).
+
+import { num } from "../i18n.js";
 
 export const KIND_LABELS = {
   triangle: "Roof Component",
@@ -41,22 +47,21 @@ export function computeEditorStats(decorations, { budget = Infinity } = {}) {
 
   const warnings = [];
   if (count > budget) {
-    warnings.push(
-      `${(count - budget).toLocaleString()} decoration(s) over the ${budget.toLocaleString()} budget`,
-    );
+    warnings.push({ key: "w.budget", params: { n: num(count - budget), b: num(budget) } });
   }
   if (overZoom > 0) {
-    warnings.push(`${overZoom} primitive(s) exceed the zoom limit of 50`);
+    warnings.push({ key: "w.zoom", params: { n: num(overZoom) } });
   }
   if (models > 1) {
-    warnings.push(`Output splits into ${models} models (max ${PER_MODEL} decorations each)`);
+    warnings.push({ key: "w.split", params: { n: num(models) } });
   }
   return { count, byKind, uniqueColors: colors.size, models, perModel, overZoom, warnings };
 }
 
 export function formatBytes(n) {
   if (n == null) return "";
-  if (n < 1024) return n + " B";
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
-  return (n / (1024 * 1024)).toFixed(2) + " MB";
+  if (n < 1024) return num(n) + " B";
+  if (n < 1024 * 1024)
+    return num(n / 1024, { maximumFractionDigits: 1 }) + " KB";
+  return num(n / (1024 * 1024), { maximumFractionDigits: 2 }) + " MB";
 }

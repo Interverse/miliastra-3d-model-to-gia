@@ -31,9 +31,10 @@ import {
   r4,
   decRadius,
 } from "./dec-transform.js";
-import { computeEditorStats, formatBytes, KIND_LABELS } from "./stats.js";
+import { computeEditorStats, formatBytes } from "./stats.js";
 import { mergeAdjacent, reduceToTarget } from "./optimize.js";
 import { buildPreview } from "../preview-mesh.js";
+import { t, num } from "../i18n.js";
 
 const GIZMO_MODES = { move: "translate", rotate: "rotate", scale: "scale" };
 
@@ -317,7 +318,7 @@ export function createEditor({ viewer, ctx }) {
 
   $("tb-space").addEventListener("click", () => {
     space = space === "world" ? "local" : "world";
-    $("tb-space").textContent = space === "world" ? "World" : "Local";
+    $("tb-space").textContent = t(space === "world" ? "tb.world" : "tb.local");
     gizmo.setSpace(space);
   });
   $("tb-snap").addEventListener("click", () => {
@@ -603,7 +604,7 @@ export function createEditor({ viewer, ctx }) {
     e.msg.decorations = e.msg.decorations.filter((_, i) => !selection.has(i));
     selection.clear();
     ctx.rebuild(false);
-    ctx.toast(`Deleted ${n}`);
+    ctx.toast(t("t.deleted", { n: num(n) }));
   }
 
   function duplicateSelected(fromClipboard = false) {
@@ -618,14 +619,14 @@ export function createEditor({ viewer, ctx }) {
     e.msg.decorations.push(...cloneDecorations(src));
     ctx.rebuild(false);
     setSelection(src.map((_, k) => base + k));
-    ctx.toast(`${fromClipboard ? "Pasted" : "Duplicated"} ${src.length}`);
+    ctx.toast(t(fromClipboard ? "t.pasted" : "t.duplicated", { n: num(src.length) }));
   }
 
   function copySelection() {
     const e = recon();
     if (!e || !selection.size) return;
     clipboard = cloneDecorations([...selection].map((i) => e.msg.decorations[i]));
-    ctx.toast(`Copied ${clipboard.length}`);
+    ctx.toast(t("t.copiedn", { n: num(clipboard.length) }));
   }
 
   function undo() {
@@ -636,7 +637,7 @@ export function createEditor({ viewer, ctx }) {
     e.msg.decorations = restored;
     selection.clear();
     ctx.rebuild(false);
-    ctx.toast("Undone");
+    ctx.toast(t("t.undone"));
   }
   function redo() {
     const e = recon();
@@ -646,7 +647,7 @@ export function createEditor({ viewer, ctx }) {
     e.msg.decorations = restored;
     selection.clear();
     ctx.rebuild(false);
-    ctx.toast("Redone");
+    ctx.toast(t("t.redone"));
   }
 
   $("ed-delete").addEventListener("click", deleteSelected);
@@ -756,18 +757,24 @@ export function createEditor({ viewer, ctx }) {
   function refreshSelectionUI() {
     const e = recon();
     const n = selection.size;
-    let text = "Nothing selected";
+    let text = t("sel.none");
     if (e && n === 1) {
       const idx = [...selection][0];
       const d = e.msg.decorations[idx];
-      text = `${KIND_LABELS[d?.kind] ?? "Roof Component"} #${idx + 1}`;
+      text = t("si.one", { kind: t("kind." + (d?.kind ?? "triangle")), n: idx + 1 });
     } else if (e && n > 1) {
       const kinds = new Set([...selection].map((i) => e.msg.decorations[i]?.kind));
-      text = `${n.toLocaleString()} primitives (${kinds.size === 1 ? KIND_LABELS[[...kinds][0]] : kinds.size + " types"})`;
+      text = t("si.many", {
+        n: num(n),
+        kinds:
+          kinds.size === 1
+            ? t("kind." + [...kinds][0])
+            : t("si.types", { n: num(kinds.size) }),
+      });
     }
     $("ed-selinfo").textContent = text;
     $("ed-delete").disabled = n === 0;
-    $("ed-delete").textContent = n ? `Delete (${n.toLocaleString()})` : "Delete";
+    $("ed-delete").textContent = n ? t("sel.deln", { n: num(n) }) : t("sel.del");
     $("ed-dup").disabled = n === 0;
     $("ed-colorrow").hidden = n === 0;
     if (e && n) {
@@ -777,7 +784,7 @@ export function createEditor({ viewer, ctx }) {
       }
     }
     refreshTransformInputs();
-    $("st-sel").textContent = n ? `${n.toLocaleString()} selected` : "";
+    $("st-sel").textContent = n ? t("st.sel", { n: num(n) }) : "";
   }
 
   // ---------- focus ----------
@@ -909,25 +916,26 @@ export function createEditor({ viewer, ctx }) {
       return;
     }
     const s = computeEditorStats(e.msg.decorations, { budget: ctx.budget() });
-    const rows = [["Decorations", s.count.toLocaleString()]];
-    if (s.models > 1) rows.push(["Per model", s.perModel]);
+    const warnings = s.warnings.map((w) => t(w.key, w.params));
+    const rows = [[t("es.decs"), num(s.count)]];
+    if (s.models > 1) rows.push([t("es.permodel"), s.perModel]);
     for (const [kind, n] of Object.entries(s.byKind).sort((a, b) => b[1] - a[1])) {
-      rows.push([KIND_LABELS[kind] ?? kind, n.toLocaleString()]);
+      rows.push([t("kind." + kind), num(n)]);
     }
-    rows.push(["Unique colors", s.uniqueColors.toLocaleString()]);
-    rows.push(["Models (≤999 each)", String(s.models)]);
-    rows.push(["Est. output size", `<span id="stat-size-v">…</span>`]);
+    rows.push([t("es.colors"), num(s.uniqueColors)]);
+    rows.push([t("es.models"), num(s.models)]);
+    rows.push([t("es.size"), `<span id="stat-size-v">…</span>`]);
     grid.innerHTML = rows
       .map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`)
       .join("");
-    warnEl.innerHTML = s.warnings
+    warnEl.innerHTML = warnings
       .map((w) => `<div class="warn-row">⚠ <span>${w}</span></div>`)
       .join("");
 
-    $("st-decs").textContent = `${s.count.toLocaleString()} decorations`;
-    $("st-models").textContent = s.models > 1 ? `${s.models} models` : "";
-    $("st-warn").textContent = s.warnings.length
-      ? `⚠ ${s.warnings[0]}${s.warnings.length > 1 ? ` (+${s.warnings.length - 1})` : ""}`
+    $("st-decs").textContent = t("st.decs", { n: num(s.count) });
+    $("st-models").textContent = s.models > 1 ? t("st.models", { n: num(s.models) }) : "";
+    $("st-warn").textContent = warnings.length
+      ? `⚠ ${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1})` : ""}`
       : "";
 
     clearTimeout(sizeTimer);
@@ -955,7 +963,7 @@ export function createEditor({ viewer, ctx }) {
     e.msg.decorations = res.decorations;
     selection.clear();
     ctx.rebuild(false);
-    ctx.toast(res.merged > 0 ? `Merged away ${res.merged.toLocaleString()}` : "Nothing to merge");
+    ctx.toast(res.merged > 0 ? t("t.merged", { n: num(res.merged) }) : t("t.nomerge"));
   });
   $("opt-hidden").addEventListener("click", () => {
     const e = recon();
@@ -966,21 +974,21 @@ export function createEditor({ viewer, ctx }) {
     const visible = picker.visibleFromAround(center, Math.max(bs.radius, 0.1));
     const total = e.msg.decorations.length;
     if (visible.size >= total) {
-      ctx.toast("No hidden primitives found");
+      ctx.toast(t("t.nohidden"));
       return;
     }
     pushHistory("remove hidden");
     e.msg.decorations = e.msg.decorations.filter((_, i) => visible.has(i));
     selection.clear();
     ctx.rebuild(false);
-    ctx.toast(`Removed ${(total - visible.size).toLocaleString()} hidden`);
+    ctx.toast(t("t.removedhidden", { n: num(total - visible.size) }));
   });
   $("opt-reduce").addEventListener("click", () => {
     const e = recon();
     if (!e) return;
     const target = Math.max(1, parseInt($("opt-target").value, 10) || 999);
     if (e.msg.decorations.length <= target) {
-      ctx.toast("Already at or below target");
+      ctx.toast(t("t.attarget"));
       return;
     }
     pushHistory("reduce");
@@ -988,9 +996,7 @@ export function createEditor({ viewer, ctx }) {
     e.msg.decorations = res.decorations;
     selection.clear();
     ctx.rebuild(false);
-    ctx.toast(
-      `Reduced: ${res.merged.toLocaleString()} merged, ${res.dropped.toLocaleString()} dropped`,
-    );
+    ctx.toast(t("t.reduced", { m: num(res.merged), d: num(res.dropped) }));
   });
 
   // ---------- app-facing API ----------
@@ -1003,6 +1009,8 @@ export function createEditor({ viewer, ctx }) {
     }
     const n = e ? e.msg.decorations.length : 0;
     for (const i of [...selection]) if (i >= n) selection.delete(i);
+    // language-dependent toolbar state (data-i18n would reset it to World)
+    $("tb-space").textContent = t(space === "world" ? "tb.world" : "tb.local");
     updateToolAvailability();
     refreshSelectionUI();
     updateSelectionMesh();

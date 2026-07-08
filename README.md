@@ -65,6 +65,25 @@ a file library and reloads the model whenever new files arrive:
 Uploaded textures are used everywhere: viewport rendering, per-triangle color
 sampling, subdivision decisions, preview overlay, and the generated `.gia`.
 
+## Localization
+
+The site is fully localized (UI, tooltips, dialogs, statistics, warnings,
+toasts, and the primitives table) into 15 languages: English, 简体中文,
+繁體中文, 日本語, 한국어, Español, Français, Русский, ไทย, Tiếng Việt,
+Deutsch, Bahasa Indonesia, Português, Türkçe, and Italiano. The language
+selector in the sidebar footer switches instantly without a reload; the
+choice persists, and the browser language is auto-detected on first visit.
+Numbers format per locale via `Intl.NumberFormat`.
+
+Translations live in `js/locales/<code>.js` — one flat dictionary per
+language keyed identically to `js/locales/en.js` (the canonical set).
+Adding a language = adding one file plus one row to `LANGS` in `js/i18n.js`;
+no application code changes. Any key missing from a locale silently falls
+back to English, never to blank text or raw keys. Static markup binds via
+`data-i18n` / `data-i18n-title` attributes; dynamic strings go through
+`t(key, params)` and re-render on language change, so future UI components
+localize the same way.
+
 ## How it works
 
 Each source triangle is reproduced by placing the canonical right-triangle

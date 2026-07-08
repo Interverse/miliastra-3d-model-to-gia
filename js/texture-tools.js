@@ -7,6 +7,8 @@
 // recomputed as  adjust(original) -> quantize -> composite(paint overlay)
 // whenever a control changes, so sliders never accumulate loss.
 
+import { t } from "./i18n.js";
+
 // onTextureChange(textureObj) is called after every edit so the app can
 // refresh the 3D viewport materials that use this texture.
 export function setupTexturePanel(getEl, onTextureChange) {
@@ -117,7 +119,7 @@ export function setupTexturePanel(getEl, onTextureChange) {
     for (const id of ["tx-colors", "tx-hue", "tx-sat", "tx-bri", "tx-con"]) {
       $(id).addEventListener("input", () => {
         const labels = {
-          "tx-colors": ["v-txcolors", (v) => (v === "0" ? "off" : v)],
+          "tx-colors": ["v-txcolors", (v) => (v === "0" ? t("val.off") : v)],
           "tx-hue": ["v-txhue", (v) => v + "°"],
           "tx-sat": ["v-txsat", (v) => v + "%"],
           "tx-bri": ["v-txbri", (v) => v],
@@ -148,10 +150,10 @@ export function setupTexturePanel(getEl, onTextureChange) {
   return {
     // textures: [{ texture: {width,height,data,...}, name }]
     setTextures(list) {
-      entries = list.map((t, i) => ({
-        texture: t.texture,
-        name: t.name ?? `Texture ${i + 1}`,
-        original: new Uint8ClampedArray(t.texture.data),
+      entries = list.map((e, i) => ({
+        texture: e.texture,
+        name: e.name ?? t("tx.item", { n: i + 1 }),
+        original: new Uint8ClampedArray(e.texture.data),
       }));
       const sel = $("tx-select");
       sel.innerHTML = "";
