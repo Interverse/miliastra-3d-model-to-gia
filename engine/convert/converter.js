@@ -28,6 +28,7 @@ import { spriteToBoxes } from './sprite.js';
 import { voxelizeTriangles } from './voxelize.js';
 import { marchingCubesSurface } from './marchingcubes.js';
 import { pixelPerfect } from './pixelperfect.js';
+import { hyperPreprocess, hyperReduce } from './preprocess.js';
 import { capPlacements, MAX_ZOOM } from './cap.js';
 
 export const DEFAULT_PARAMS = {
@@ -88,6 +89,7 @@ function* iterateTriangles(mesh) {
   const pos = mesh.positions;
   const idx = mesh.indices;
   const uvs = mesh.uvs;
+  const vcs = mesh.colors; // per-vertex display colors (sRGB 0..255, stride 3)
   const count = idx ? idx.length : pos.length / 3;
   for (let i = 0; i + 2 < count; i += 3) {
     const ia = idx ? idx[i] : i, ib = idx ? idx[i + 1] : i + 1, ic = idx ? idx[i + 2] : i + 2;
@@ -102,6 +104,11 @@ function* iterateTriangles(mesh) {
         [uvs[ib * 2], uvs[ib * 2 + 1]],
         [uvs[ic * 2], uvs[ic * 2 + 1]],
       ] : null,
+      vc: vcs ? [
+        [vcs[ia * 3], vcs[ia * 3 + 1], vcs[ia * 3 + 2]],
+        [vcs[ib * 3], vcs[ib * 3 + 1], vcs[ib * 3 + 2]],
+        [vcs[ic * 3], vcs[ic * 3 + 1], vcs[ic * 3 + 2]],
+      ] : null,
     };
   }
 }
@@ -112,31 +119,51 @@ function subdivideForColor(tri, mesh, params, depth, out, budget, stats) {
   const base = mesh.color ?? [255, 255, 255];
   const { color, spread, alphaMax } = sampleTriangleColor(
     mesh.texture, tri.uv?.[0], tri.uv?.[1], tri.uv?.[2], base);
+  // vertex colors (WYSIWYG): modulate the sampled/base color like the
+  // renderer does, and drive subdivision on their gradient too
+  let leafColor = color;
+  let vcSpread = 0;
+  if (tri.vc) {
+    const [a, b, c] = tri.vc;
+    const avg = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3];
+    vcSpread = Math.max(colorDistance(a, b), colorDistance(b, c), colorDistance(a, c));
+    leafColor = [
+      Math.round(color[0] * avg[0] / 255),
+      Math.round(color[1] * avg[1] / 255),
+      Math.round(color[2] * avg[2] / 255),
+    ];
+  }
   const threshold = params.subdivideThreshold ?? params.colorTolerance;
   const area = triangleArea(tri.p[0], tri.p[1], tri.p[2]);
-  const canSubdivide = depth < params.maxSubdiv && tri.uv && mesh.texture &&
+  const canSubdivide = depth < params.maxSubdiv &&
+    ((tri.uv && mesh.texture) || tri.vc) &&
     area >= params.minTriangleArea * 4 && out.length + 4 <= budget;
-  if (spread <= threshold || !canSubdivide) {
+  if (Math.max(spread, vcSpread) <= threshold || !canSubdivide) {
     // leaf: skip fully/mostly transparent texture regions
     if (mesh.texture && tri.uv && alphaMax < Math.max(0.004, params.alphaCutoff)) {
       stats.transparentSkipped++;
       return;
     }
-    out.push({ p: tri.p, color });
+    out.push({ p: tri.p, color: leafColor });
     return;
   }
   // 4-way midpoint subdivision
   const m01 = mul(add(tri.p[0], tri.p[1]), 0.5);
   const m12 = mul(add(tri.p[1], tri.p[2]), 0.5);
   const m20 = mul(add(tri.p[2], tri.p[0]), 0.5);
-  const uv01 = [(tri.uv[0][0] + tri.uv[1][0]) / 2, (tri.uv[0][1] + tri.uv[1][1]) / 2];
-  const uv12 = [(tri.uv[1][0] + tri.uv[2][0]) / 2, (tri.uv[1][1] + tri.uv[2][1]) / 2];
-  const uv20 = [(tri.uv[2][0] + tri.uv[0][0]) / 2, (tri.uv[2][1] + tri.uv[0][1]) / 2];
+  const muv = (i, j) => tri.uv
+    ? [(tri.uv[i][0] + tri.uv[j][0]) / 2, (tri.uv[i][1] + tri.uv[j][1]) / 2]
+    : null;
+  const mvc = (i, j) => tri.vc
+    ? [(tri.vc[i][0] + tri.vc[j][0]) / 2, (tri.vc[i][1] + tri.vc[j][1]) / 2, (tri.vc[i][2] + tri.vc[j][2]) / 2]
+    : null;
+  const uv01 = muv(0, 1), uv12 = muv(1, 2), uv20 = muv(2, 0);
+  const vc01 = mvc(0, 1), vc12 = mvc(1, 2), vc20 = mvc(2, 0);
   const children = [
-    { p: [tri.p[0], m01, m20], uv: [tri.uv[0], uv01, uv20] },
-    { p: [m01, tri.p[1], m12], uv: [uv01, tri.uv[1], uv12] },
-    { p: [m20, m12, tri.p[2]], uv: [uv20, uv12, tri.uv[2]] },
-    { p: [m01, m12, m20], uv: [uv01, uv12, uv20] },
+    { p: [tri.p[0], m01, m20], uv: tri.uv && [tri.uv[0], uv01, uv20], vc: tri.vc && [tri.vc[0], vc01, vc20] },
+    { p: [m01, tri.p[1], m12], uv: tri.uv && [uv01, tri.uv[1], uv12], vc: tri.vc && [vc01, tri.vc[1], vc12] },
+    { p: [m20, m12, tri.p[2]], uv: tri.uv && [uv20, uv12, tri.uv[2]], vc: tri.vc && [vc20, vc12, tri.vc[2]] },
+    { p: [m01, m12, m20], uv: tri.uv && [uv01, uv12, uv20], vc: tri.vc && [vc01, vc12, vc20] },
   ];
   for (const c of children) subdivideForColor(c, mesh, params, depth + 1, out, budget, stats);
 }
@@ -153,7 +180,26 @@ function subdivideForColor(tri, mesh, params, depth, out, budget, stats) {
 export const TRI_SCALE_Y_PER_M = 100 / 13; // 7.692307...
 export const TRI_SCALE_Z_PER_M = 100 / 27; // 3.703703...
 
+// ε-inflation (Phase 1.5 fix d, hyper-mode only — see Guard note above
+// finishPlacements): every flat plate is grown ~0.75 mm on its thin axis and
+// in-plane extents so coplanar layers stop z-fighting and adjacent plates
+// overlap slightly instead of leaving hairline T-junction cracks (plan
+// §3.5). In-plane growth is safe for squares/planes (no fixed-fraction
+// calibration). For triangles the epsilon is added to the leg length IN
+// METERS *before* the exact TRI_SCALE_*_PER_M multiply above, so the 100/13
+// and 100/27 fractions — and the zero-gap seam they guarantee when two
+// triangles tile a square (see the calibration comment above) — stay
+// mathematically exact; the assembled shape is just a hair bigger, and
+// overlap is free (plan §3.2). Gated to hyper mode only: this is a shared
+// emission path (placementToDecoration runs for every mode), and direct/
+// voxel/pixel output must not shift.
+const HYPER_INFLATE_M = 0.00075;                   // ~0.75 mm, meters (in-plane)
+const HYPER_INFLATE_SCALE = HYPER_INFLATE_M * 10;  // same, in game scale-units (thin axis)
+
 export function placementToDecoration(pl, params) {
+  const inflate = params.mode === 'hyper';
+  const dM = inflate ? HYPER_INFLATE_M : 0;
+  const dS = inflate ? HYPER_INFLATE_SCALE : 0;
   let rot = pl.rotation;
   if (!pl.kind || pl.kind === 'triangle') {
     // Internal placements put legs on local +Y/+Z. The v2 model's second leg
@@ -191,14 +237,14 @@ export function placementToDecoration(pl, params) {
       // canonical square: a unit cube, 0.1 m per axis at scale 1 (thin uses
       // set Y to thinScale; volumetric uses set fullY with a real extent)
       base.scale = {
-        x: round6(pl.scale.x * 10),
-        y: pl.fullY ? round6(pl.scale.y * 10) : params.thinScale,
-        z: round6(pl.scale.z * 10),
+        x: round6((pl.scale.x + dM) * 10),
+        y: pl.fullY ? round6((pl.scale.y + dM) * 10) : params.thinScale + dS,
+        z: round6((pl.scale.z + dM) * 10),
       };
       break;
     case 'plane':
       // 1×1 m on local XZ at scale 10; sample uses y scale 1
-      base.scale = { x: round6(pl.scale.x * 10), y: 1, z: round6(pl.scale.z * 10) };
+      base.scale = { x: round6((pl.scale.x + dM) * 10), y: 1, z: round6((pl.scale.z + dM) * 10) };
       break;
     case 'sphere':
       // 1 m diameter at scale 10 (pl.scale = diameters in m)
@@ -225,9 +271,9 @@ export function placementToDecoration(pl, params) {
     default:
       // calibrated triangle: zoom = leg1_m * 100/13, leg2_m * 100/27
       base.scale = {
-        x: params.thinScale,
-        y: round6(pl.scale.y * TRI_SCALE_Y_PER_M),
-        z: round6(pl.scale.z * TRI_SCALE_Z_PER_M),
+        x: params.thinScale + dS,
+        y: round6((pl.scale.y + dM) * TRI_SCALE_Y_PER_M),
+        z: round6((pl.scale.z + dM) * TRI_SCALE_Z_PER_M),
       };
   }
   return base;
@@ -243,6 +289,20 @@ function round6(v) {
 // input: meshes array, { meshes }, or { sprite: { texture, pixelSize, thickness } }
 export function convert(input, userParams = {}) {
   const params = { ...DEFAULT_PARAMS, ...userParams };
+  // Hyper Optimized: preprocessing (interior cull, CIELAB palette,
+  // working-mesh reduction) + palette-exact merging with generous geometric
+  // tolerances through the shared direct pipeline. The original color
+  // tolerance still drives texture subdivision; merging compares the
+  // palette-snapped colors exactly.
+  const hyper = params.mode === 'hyper';
+  if (hyper) {
+    params.subdivideThreshold =
+      params.subdivideThreshold ?? Math.max(30, params.colorTolerance);
+    params.colorTolerance = 0;
+    params.snapDeg = Math.max(params.snapDeg, 6);
+    params.planarAngleDeg = Math.max(params.planarAngleDeg, 6);
+    params.primitiveMode = 'both';
+  }
   const meshes = Array.isArray(input) ? input : (input.meshes ?? []);
   const sprite = Array.isArray(input) ? null : input.sprite;
   const stats = {
@@ -286,7 +346,7 @@ export function convert(input, userParams = {}) {
   };
 
   // 1. gather raw world-space triangles
-  const colored = [];
+  let colored = [];
   const budget = Math.max(params.maxDecorations * 4, 40000);
 
   if (sprite) {
@@ -316,6 +376,13 @@ export function convert(input, userParams = {}) {
   // 2. optional decimation (before color sampling; preserves UVs)
   if (params.decimate > 0) raw = decimateTriangles(raw, params.decimate);
   stats.afterDecimation = raw.length;
+
+  // 2b. Hyper Optimized preprocessing: connected-component stats + interior
+  // cull (enclosed geometry can never be seen — spend no budget on it)
+  if (hyper && raw.length) {
+    raw = hyperPreprocess(raw, params, stats);
+    stats.afterCull = raw.length;
+  }
 
   // --- VOXEL MODE: rasterize raw triangles (texture-accurate per-voxel
   // colors) into boxes, OR reconstruct the SDF zero level set with marching
@@ -448,6 +515,71 @@ export function convert(input, userParams = {}) {
     stats.afterSubdivision = colored.length;
   }
 
+  // 3b/4/5/6. Hyper Optimized: snap all leaf colors to a compact CIELAB
+  // palette, reduce the working mesh, then merge/decompose to placements
+  // (steps 4-6, factored into buildPlacements() below since the hyper path
+  // needs to run them multiple times for the budget-feedback loop).
+  if (hyper && colored.length) {
+    const coloredOriginal = colored;
+    const hyperCap = params.maxDecorations || 99900;
+    if (hyperCap >= 99900) {
+      // unbounded default: no fixed budget to converge toward, single pass
+      // (matches the plan's original tier-ladder aim, goal=2400)
+      colored = hyperReduce(colored, params, stats);
+      return buildPlacements(colored, params, stats);
+    }
+    // Explicit budget (Max Decorations set, e.g. the harness's 10,000 cap):
+    // measure the ACTUAL leaf->decoration expansion from the FINAL placement
+    // count (post merge/decompose/cap-split/budget-merge — never
+    // stats.afterMerge, which is pre-cap-split and can read wildly low; see
+    // docs/decoration-reduction-plan.md Phase 1.5 baseline notes) and re-run
+    // reduction with a leaf target scaled by that measured expansion if the
+    // result misses the quality band. Converges toward the upper half of
+    // [cap*0.5, cap] (spend the budget, don't leave it on the table). Max 3
+    // attempts.
+    const bandLow = Math.round(hyperCap * 0.4995);
+    const bandTarget = Math.round(hyperCap - (hyperCap - bandLow) * 0.25);
+    let leafTarget = null; // first attempt: hyperReduce's own cap/2.2 guess
+    let result = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const scratchStats = { ...stats };
+      const reduced = hyperReduce(coloredOriginal.map(cloneColoredLeaf), params, scratchStats, leafTarget);
+      result = buildPlacements(reduced, params, scratchStats);
+      const finalCount = result.decorations.length;
+      // Measure the PRE-CLAMP placement count (finalCount + dropped): when
+      // finishPlacements drop-clamps to exactly maxDecorations, finalCount is
+      // pinned at the cap and understates the true leaf->decoration expansion,
+      // which used to blind this loop into accepting a catastrophic drop (e.g.
+      // shattered_crystal_sword: 20,500 placements clamped to 10,000, half the
+      // silhouette thrown away, yet finalCount looked "in band"). Retry whenever
+      // any placement was dropped so the next attempt lowers the leaf target.
+      const droppedN = result.stats.dropped || 0;
+      const preClamp = finalCount + droppedN;
+      const expansion = preClamp / Math.max(1, reduced.length);
+      scratchStats.leafExpansion = Math.round(expansion * 100) / 100;
+      scratchStats.hyperAttempts = attempt + 1;
+      const clean = droppedN === 0 && finalCount >= bandLow && finalCount <= hyperCap;
+      if (clean || attempt === 2) break;
+      leafTarget = Math.max(200, Math.round(bandTarget / Math.max(0.1, expansion)));
+    }
+    Object.assign(stats, result.stats);
+    return { placements: result.placements, decorations: result.decorations, stats, params };
+  }
+  return buildPlacements(colored, params, stats);
+}
+
+// Palette assignment (buildPalette/hyperReduce) mutates each leaf's `.color`
+// in place — the budget-feedback loop above re-runs hyperReduce from the
+// same pristine pre-reduction leaves on every attempt, so each attempt needs
+// its own copy (positions are never mutated in place, only reassigned via
+// new objects, so `.p` can stay shared).
+function cloneColoredLeaf(t) {
+  return { p: t.p, color: [...t.color] };
+}
+
+// ---------- steps 4-6: bounds -> merge & primitives -> finishPlacements ----------
+
+function buildPlacements(colored, params, stats) {
   // 4. bounds for stats — the model origin is preserved (no recentering)
   if (colored.length) {
     let minX = 1/0, minY = 1/0, minZ = 1/0, maxX = -1/0, maxY = -1/0, maxZ = -1/0;

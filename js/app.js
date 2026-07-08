@@ -13,6 +13,7 @@ import { KIND_LABELS, formatBytes } from "./editor/stats.js";
 import { extractMeshes } from "./extract.js";
 import { setupTexturePanel } from "./texture-tools.js";
 import { buildPreview } from "./preview-mesh.js";
+import { scoreCurrentModel } from "./score-current.js";
 import {
   buildGia,
   splitIntoModels,
@@ -524,7 +525,8 @@ export function initApp({ mode = "gia" } = {}) {
       $(id).hidden = on;
     }
     const m = $("p-mode").value;
-    $("direct-params").hidden = on || m !== "direct";
+    $("direct-params").hidden = on || (m !== "direct" && m !== "hyper");
+    $("hyper-params").hidden = on || m !== "hyper";
     $("voxel-params").hidden = on || m !== "voxel";
     $("pixel-params").hidden = on || m !== "pixel";
     if (on) $("adv-params").before($("row-alpha"));
@@ -878,9 +880,13 @@ export function initApp({ mode = "gia" } = {}) {
   $("p-mode").addEventListener("change", () => {
     const m = $("p-mode").value;
     const sprite = !!spriteImageName;
-    $("direct-params").hidden = sprite || m !== "direct";
+    $("direct-params").hidden = sprite || (m !== "direct" && m !== "hyper");
+    $("hyper-params").hidden = sprite || m !== "hyper";
     $("voxel-params").hidden = sprite || m !== "voxel";
     $("pixel-params").hidden = sprite || m !== "pixel";
+  });
+  $("p-hypercolors").addEventListener("input", () => {
+    $("v-hypercolors").textContent = $("p-hypercolors").value;
   });
   $("p-voxsurf").addEventListener("change", () => {
     $("sdf-params").hidden = $("p-voxsurf").value !== "mc";
@@ -945,6 +951,7 @@ export function initApp({ mode = "gia" } = {}) {
     return {
       userScale: scale,
       mode: $("p-mode").value,
+      hyperColors: parseInt($("p-hypercolors").value, 10) || 32,
       voxelRes: Math.max(2, parseInt($("p-voxres-n").value, 10) || 256),
       voxelColorTolerance: parseFloat($("p-voxtol").value) || 0,
       voxelSurface: $("p-voxsurf").value,
@@ -1035,7 +1042,7 @@ export function initApp({ mode = "gia" } = {}) {
     }
     const id = ++reconSeq;
     const p = lastParams ?? {};
-    let kind = ["direct", "voxel", "pixel"].includes(p.mode) ? p.mode : "direct";
+    let kind = ["direct", "hyper", "voxel", "pixel"].includes(p.mode) ? p.mode : "direct";
     let extra = "";
     if (spriteImageName) kind = "sprite";
     else if (p.mode === "voxel") extra = ` ${p.voxelRes}${p.voxelSurface === "mc" ? " MC" : ""}`;
@@ -1325,6 +1332,11 @@ export function initApp({ mode = "gia" } = {}) {
             : "";
       }
     }
+    const scoreBtn = $("btn-score");
+    if (scoreBtn) {
+      scoreBtn.disabled = !ready;
+      if (!ready) renderStats($("score-result"), {});
+    }
   }
 
   $("btn-download")?.addEventListener("click", () => {
@@ -1342,6 +1354,35 @@ export function initApp({ mode = "gia" } = {}) {
     a.download = currentName + ".gia";
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+
+  // Similarity score for the currently loaded source vs. its active
+  // reconstruction (test/metrics.js + test/views26.js) — mainly for models
+  // too large for test/similarity-harness.html's 10 MB limit.
+  $("btn-score")?.addEventListener("click", async () => {
+    if (!lastResult || busy) return;
+    const btn = $("btn-score");
+    btn.disabled = true;
+    const prevLabel = btn.textContent;
+    btn.textContent = t("btn.scoring");
+    try {
+      const score = scoreCurrentModel(viewer, {
+        reconPositions: lastResult.positions,
+        reconColors: lastResult.colors,
+      });
+      renderStats($("score-result"), {
+        [t("score.faith")]: score.faithScore.toFixed(1),
+        [t("score.iou")]: score.meanIoU.toFixed(3),
+        [t("score.miniou")]: score.minIoU.toFixed(3),
+        [t("score.de")]: score.meanDeltaE.toFixed(2),
+      });
+    } catch (err) {
+      console.error(err);
+      showToast(t("err.score", { msg: err.message }));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prevLabel;
+    }
   });
 
   // Primitive-data view (main page): popup table of every generated primitive

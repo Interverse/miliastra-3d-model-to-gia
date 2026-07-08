@@ -149,6 +149,16 @@ the grid) helps judge scale.
 ### Conversion modes
 
 - **Direct** — converts mesh faces as-is (Triangles, or Triangles + Squares).
+- **Hyper Optimized** — aggressively reduces any model (1M+ polygons
+  included) into a compact game-ready decoration set, targeting <999
+  ideally and ≤2997 at most: hidden interior faces are culled (voxel-flood
+  reachability), colors snap to a compact perceptual CIELAB palette
+  (Palette colors slider, neighbor-smoothed so gradients don't fragment),
+  the working mesh is reduced to a budget-realistic size, and merging runs
+  palette-exact with generous right-angle/coplanar tolerances. On the
+  reference suite it cuts decoration counts 17–136× vs Direct while
+  preserving silhouette and key colors (see
+  docs/decoration-reduction-plan.md for measurements).
 - **Voxel** — rebuilds the model from colored voxels: triangles are rasterized
   into a grid (resolution slider), voxel colors are sampled straight from the
   textures, similar colors merge (Voxel color tolerance), fully enclosed

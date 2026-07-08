@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Similarity test harness</title>
+<!-- Same importmap as index.html so the harness resolves "three" identically
+     to the app (see docs/decoration-reduction-plan.md, Phase 1.5 spec). -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #14161a;
+    color: #d8dbe0;
+    font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
+    padding: 20px 24px 60px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #8b93a3; margin: 0 0 18px; font-size: 13px; }
+  #controls { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  button {
+    background: #2a2e36; color: #d8dbe0; border: 1px solid #3a4150;
+    border-radius: 6px; padding: 8px 16px; font-size: 14px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #343945; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { color: #8b93a3; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 8px; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid #262a32; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #8b93a3; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  tr.pending td { color: #5a6273; }
+  tr.fail { background: rgba(220, 80, 80, 0.08); }
+  tr.fail .pf { color: #ff6b6b; font-weight: 700; }
+  tr.pass .pf { color: #36d47e; font-weight: 700; }
+  .detail-row td { text-align: left; padding: 10px; background: #191c22; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 18px; }
+  .thumb-group { display: flex; flex-direction: column; gap: 4px; }
+  .thumb-group .cap { font-size: 12px; color: #8b93a3; }
+  .thumb-pair { display: flex; gap: 4px; }
+  canvas.thumb { width: 160px; height: 160px; background: #000; border-radius: 4px; image-rendering: pixelated; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; background: #2a2e36; font-size: 11px; color: #8b93a3; margin-left: 6px; }
+  #jsonbar { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
+  a.dl { color: #36d47e; }
+  code { background: #20242c; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <h1>Similarity test harness</h1>
+  <p class="sub">Quantitative source-vs-reconstruction comparison — see
+    <code>docs/decoration-reduction-plan.md</code> § Phase 1.5. Extraction goes
+    through <code>js/extract.js</code>, conversion through
+    <code>engine/convert/converter.js</code> (mode: hyper, defaults), and the
+    reconstruction preview through <code>js/preview-mesh.js</code> — the same
+    path the app itself uses.</p>
+  <div id="controls">
+    <button id="btn-run">Run All</button>
+    <span id="status"></span>
+  </div>
+  <table id="results">
+    <thead>
+      <tr>
+        <th>Model</th><th>Class</th><th>FaithScore</th><th>meanIoU</th><th>minIoU</th>
+        <th>meanΔE</th><th>Decorations</th><th>Result</th>
+      </tr>
+    </thead>
+    <tbody id="results-body"></tbody>
+  </table>
+  <div id="jsonbar"></div>
+
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { extractMeshes } from "../js/extract.js";
+import { convert } from "../engine/convert/converter.js";
+import { buildPreview } from "../js/preview-mesh.js";
+import { silhouetteIoU, meanDeltaE, faithScore } from "./metrics.js";
+import {
+  VIEW_DIRS, FACE_VIEW_INDEXES, buildOrthoCamera, buildGameplayCamera,
+  renderToPixels, maskFromSilhouette, unionBox,
+} from "./views26.js";
+
+// ---------- reference model suite (spec table) ----------
+// japanese_bridge_garden is excluded from scoring (2026-07-08 budget
+// revision): its materials use the legacy KHR_materials_pbrSpecularGlossiness
+// glTF extension, which GLTFLoader doesn't resolve, so it loads all-white
+// (known loader gap, not a pipeline defect). Kept in the list so the results
+// table still shows it, flagged SKIPPED with the reason instead of scored.
+const MODELS = [
+  { file: "models/shiba.glb", name: "shiba", cls: "organic" },
+  { file: "models/matilda.glb", name: "matilda", cls: "organic" },
+  { file: "models/just_a_girl.glb", name: "just_a_girl", cls: "organic" },
+  { file: "models/stylized_sword.glb", name: "stylized_sword", cls: "hard-surface" },
+  { file: "models/shattered_crystal_sword.glb", name: "shattered_crystal_sword", cls: "hard-surface" },
+  {
+    file: "models/japanese_bridge_garden.glb", name: "japanese_bridge_garden", cls: "scene",
+    skip: true, skipReason: "specular-glossiness loader gap (materials load all-white)",
+  },
+];
+
+// Gate correction (2026-07-08, docs/decoration-reduction-plan.md "Gate
+// correction"): the fs bar here is mathematically stricter than the iou/de
+// bars combined (e.g. hard-surface iou=0.93 + de=10 can only reach
+// FaithScore ~76 < 85), so a model clearing both per-metric bars could still
+// show FAIL. PASS/FAIL is now per-metric only (iou + de + decoration cap,
+// see `gates` below); fs is kept here only as the headline trend number
+// shown in the table, and no longer gates anything.
+const THRESHOLDS = {
+  organic: { iou: 0.90, de: 8, fs: 82 },
+  "hard-surface": { iou: 0.93, de: 10, fs: 85 },
+  scene: { iou: 0.85, de: 8, fs: 78 },
+};
+
+// Decoration budget band (2026-07-08 revision): spend the extra headroom on
+// quality instead of aggressively minimizing count. MAX_DECORATIONS is also
+// the Max Decorations value fed into the converter (mode:'hyper' honors this
+// as its hard cap and derives its leaf-reduction target from it).
+const MIN_DECORATIONS = 4995;
+const MAX_DECORATIONS = 10000;
+
+// gameplay-distance "hero" view direction — matches the app's own default
+// viewer camera angle (js/viewer.js: position.set(3, 2.5, -4)) so the
+// thumbnail looks like a normal in-app view, not an arbitrary angle.
+const GAMEPLAY_DIR = new THREE.Vector3(3, 2.5, -4).normalize();
+
+const RENDER_SIZE = 512;
+const THUMB_SIZE = 256;
+
+// ---------- renderer (offscreen; only used to rasterize into targets) ----------
+const glCanvas = document.createElement("canvas");
+const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
+renderer.setSize(RENDER_SIZE, RENDER_SIZE, false);
+
+const WHITE_MAT = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+
+// ---------- WYSIWYG measurement-parity regime for the ΔE pass ----------
+// js/viewer.js renders the two things this harness compares under two
+// DIFFERENT regimes, not one: the loaded SOURCE model keeps its native
+// (glTF/PBR) material and sits in a scene lit by a Hemisphere + 2
+// directional lights rig (Viewer constructor), while the RECONSTRUCTION
+// overlay is always drawn with an explicitly UNLIT MeshBasicMaterial +
+// vertexColors (Viewer.setOverlays, mode:'solid' — comment there: "unlit
+// material: preview colors match the .gia values exactly"). That overlay
+// choice is not a style pick the harness can flip: buildPreview() (js/
+// preview-mesh.js) never emits vertex normals, so there is nothing for a lit
+// material to shade the reconstruction with, and the viewer's own comment
+// states the point is to expose the raw written .gia color, not a lit
+// impression of it. So the one regime the app ever actually uses to answer
+// "what color is this surface" is the UNLIT one — that's the regime this
+// harness standardizes on for BOTH sides of the ΔE pass. Rendering the
+// source with its original lit material instead (the previous behavior)
+// scores directional highlights/shading gradients as "conversion error"
+// even when the converter picked the exact right flat color — worst on
+// shiny, large-flat-face hard-surface models (the swords), which is exactly
+// the failure pattern that flagged this as a measurement bug rather than a
+// real color error (see docs/decoration-reduction-plan.md Phase 1.5 round-1
+// hypothesis (a)). Silhouette IoU is unaffected either way: it already
+// renders both sides through an overrideMaterial white flat pass.
+function toUnlitMaterial(mat) {
+  if (!mat) return new THREE.MeshBasicMaterial({ color: 0xffffff });
+  return new THREE.MeshBasicMaterial({
+    color: mat.color ? mat.color.clone() : new THREE.Color(0xffffff),
+    map: mat.map ?? null,
+    vertexColors: !!mat.vertexColors,
+    side: mat.side ?? THREE.FrontSide,
+    transparent: !!mat.transparent,
+    opacity: mat.opacity ?? 1,
+    alphaTest: mat.alphaTest ?? 0,
+    alphaMap: mat.alphaMap ?? null,
+  });
+}
+
+// Swap every mesh material in `object3d` for its unlit equivalent, in place.
+// Called AFTER extractMeshes() so extraction still sees the original
+// (untouched) materials — only the *rendering* used for the harness's own
+// color comparison is affected.
+function makeUnlit(object3d) {
+  object3d.traverse((n) => {
+    if (!n.isMesh) return;
+    n.material = Array.isArray(n.material)
+      ? n.material.map(toUnlitMaterial)
+      : toUnlitMaterial(n.material);
+  });
+}
+
+// ---------- pixel-buffer -> canvas helpers (row 0 from readRenderTargetPixels
+// is the BOTTOM row; canvas ImageData is top-down, so flip on the way in) ----------
+function bufferToCanvas(buf, size, outSize = size) {
+  const cv = document.createElement("canvas");
+  cv.width = size; cv.height = size;
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    const dstY = size - 1 - y;
+    img.data.set(buf.subarray(y * size * 4, (y + 1) * size * 4), dstY * size * 4);
+  }
+  ctx.putImageData(img, 0, 0);
+  if (outSize === size) return cv;
+  const out = document.createElement("canvas");
+  out.width = outSize; out.height = outSize;
+  out.getContext("2d").drawImage(cv, 0, 0, outSize, outSize);
+  return out;
+}
+
+// Overlay of two silhouette masks: red = source only, green = reconstruction
+// only, yellow = both agree. This is the sanity check that catches origin /
+// framing misalignment at a glance.
+function overlayCanvas(maskA, maskB, size, outSize = size) {
+  const cv = document.createElement("canvas");
+  cv.width = size; cv.height = size;
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    const dstY = size - 1 - y;
+    for (let x = 0; x < size; x++) {
+      const srcIdx = y * size + x;
+      const a = maskA[srcIdx], b = maskB[srcIdx];
+      const o = (dstY * size + x) * 4;
+      img.data[o] = a ? 255 : 0;
+      img.data[o + 1] = b ? 255 : 0;
+      img.data[o + 2] = (a && b) ? 0 : 0;
+      img.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  if (outSize === size) return cv;
+  const out = document.createElement("canvas");
+  out.width = outSize; out.height = outSize;
+  out.getContext("2d").drawImage(cv, 0, 0, outSize, outSize);
+  return out;
+}
+
+function thumbGroup(caption) {
+  const wrap = document.createElement("div");
+  wrap.className = "thumb-group";
+  const cap = document.createElement("div");
+  cap.className = "cap";
+  cap.textContent = caption;
+  const pair = document.createElement("div");
+  pair.className = "thumb-pair";
+  wrap.append(cap, pair);
+  return { wrap, pair };
+}
+
+function addThumb(pair, canvas, label) {
+  canvas.classList.add("thumb");
+  canvas.title = label;
+  pair.appendChild(canvas);
+}
+
+// ---------- core per-model pipeline ----------
+async function processModel(def, isFirstModel) {
+  const gltf = await new GLTFLoader().loadAsync(def.file);
+  const sourceObject = gltf.scene;
+  sourceObject.updateMatrixWorld(true);
+
+  // Harness-only 2 m height normalization (2026-07-08 budget revision):
+  // imported models at native scale were landing far from game scale, which
+  // triggers the converter's zoom<=50 cap-split explosion (see baseline
+  // table in docs/decoration-reduction-plan.md). Uniformly rescale the whole
+  // scene graph so bbox height = 2 m BEFORE extraction, so the source
+  // renders and the converter see the identical 2 m model. This is a test-
+  // harness normalization only — the app itself never auto-rescales
+  // (no unit guessing in-app, per plan policy).
+  const rawBox = new THREE.Box3().setFromObject(sourceObject);
+  const rawHeight = rawBox.max.y - rawBox.min.y;
+  if (rawHeight > 1e-9) {
+    const norm = 2 / rawHeight;
+    sourceObject.scale.multiplyScalar(norm);
+    sourceObject.updateMatrixWorld(true);
+  }
+
+  // Same extraction the app uses on load (js/app.js setModel -> extractMeshes),
+  // and conversion through the real pipeline at hyper-mode defaults.
+  const extracted = extractMeshes(sourceObject);
+  const result = convert({ meshes: extracted.meshes }, { mode: "hyper", maxDecorations: MAX_DECORATIONS });
+  const preview = buildPreview(result.decorations, result.params);
+
+  // Reconstruction mesh: unlit, vertex-colored — identical material to the
+  // app's "solid" overlay (js/viewer.js setOverlays), so the ΔE pass compares
+  // against what the app itself would show as the generated result.
+  const reconGeo = new THREE.BufferGeometry();
+  reconGeo.setAttribute("position", new THREE.BufferAttribute(preview.positions, 3));
+  reconGeo.setAttribute("color", new THREE.BufferAttribute(preview.colors, 3));
+  const reconMesh = new THREE.Mesh(
+    reconGeo,
+    new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+  );
+  const reconScene = new THREE.Scene();
+  reconScene.background = new THREE.Color(0);
+  reconScene.add(reconMesh);
+
+  // Measurement-parity regime (see note above toUnlitMaterial): swap the
+  // source's materials to their unlit equivalents AFTER extraction so the
+  // ΔE/thumbnail renders read raw base color, matching the reconstruction's
+  // always-unlit overlay material instead of a directionally-lit impression
+  // of the source. No scene lights needed — unlit materials ignore them.
+  makeUnlit(sourceObject);
+  const sourceScene = new THREE.Scene();
+  sourceScene.background = new THREE.Color(0);
+  sourceScene.add(sourceObject);
+
+  const boxSrc = new THREE.Box3().setFromObject(sourceObject);
+  const boxRecon = new THREE.Box3().setFromBufferAttribute(reconGeo.attributes.position);
+  const box = unionBox(boxSrc, boxRecon);
+
+  let iouSum = 0, minIoU = Infinity, worstIdx = -1, worstMaskA = null, worstMaskB = null;
+  const faceDEs = [];
+  const perView = [];
+  let alignmentOverlay = null;
+
+  for (let i = 0; i < VIEW_DIRS.length; i++) {
+    const dir = VIEW_DIRS[i];
+    const cam = buildOrthoCamera(dir, box, 1);
+
+    sourceScene.overrideMaterial = WHITE_MAT;
+    reconScene.overrideMaterial = WHITE_MAT;
+    const silA = renderToPixels(renderer, sourceScene, cam, RENDER_SIZE);
+    const silB = renderToPixels(renderer, reconScene, cam, RENDER_SIZE);
+    const maskA = maskFromSilhouette(silA);
+    const maskB = maskFromSilhouette(silB);
+    const iou = silhouetteIoU(maskA, maskB);
+    iouSum += iou;
+    if (iou < minIoU) {
+      minIoU = iou;
+      worstIdx = i;
+      worstMaskA = maskA;
+      worstMaskB = maskB;
+    }
+
+    const entry = { dir: [dir.x, dir.y, dir.z], iou };
+
+    const isFaceView = FACE_VIEW_INDEXES.includes(i);
+    if (isFaceView) {
+      sourceScene.overrideMaterial = null;
+      reconScene.overrideMaterial = null;
+      // srgb:true — these bytes feed ΔE (and, for the first model's sanity
+      // check, get displayed), so they must carry the same linear->sRGB
+      // encode the on-screen viewport applies (see views26.js renderToPixels).
+      const colA = renderToPixels(renderer, sourceScene, cam, RENDER_SIZE, { srgb: true });
+      const colB = renderToPixels(renderer, reconScene, cam, RENDER_SIZE, { srgb: true });
+      const intersection = new Uint8Array(maskA.length);
+      for (let p = 0; p < intersection.length; p++) intersection[p] = maskA[p] && maskB[p] ? 1 : 0;
+      const de = meanDeltaE(colA, colB, intersection);
+      entry.deltaE = de;
+      faceDEs.push(de);
+    }
+    perView.push(entry);
+
+    // Sanity check (spec): for the FIRST model only, render one overlay view
+    // (source silhouette red, reconstruction green, overlap yellow) so
+    // origin/framing misalignment is visible immediately.
+    if (isFirstModel && i === FACE_VIEW_INDEXES[0]) {
+      alignmentOverlay = overlayCanvas(maskA, maskB, RENDER_SIZE, THUMB_SIZE);
+    }
+  }
+
+  const meanIoU = iouSum / VIEW_DIRS.length;
+  const meanDE = faceDEs.reduce((a, b) => a + b, 0) / faceDEs.length;
+  const fs = faithScore(meanIoU, meanDE);
+
+  // gameplay-distance thumbnail pair
+  const camG = buildGameplayCamera(GAMEPLAY_DIR, box, 1);
+  sourceScene.overrideMaterial = null;
+  reconScene.overrideMaterial = null;
+  const gSrc = bufferToCanvas(renderToPixels(renderer, sourceScene, camG, RENDER_SIZE, { srgb: true }), RENDER_SIZE, THUMB_SIZE);
+  const gRecon = bufferToCanvas(renderToPixels(renderer, reconScene, camG, RENDER_SIZE, { srgb: true }), RENDER_SIZE, THUMB_SIZE);
+
+  // worst-IoU-view thumbnail pair (overlay, so the mismatch itself is visible)
+  const worstOverlay = overlayCanvas(worstMaskA, worstMaskB, RENDER_SIZE, THUMB_SIZE);
+
+  // cleanup GPU resources before the next (lazily-loaded) model
+  sourceObject.traverse((n) => {
+    n.geometry?.dispose?.();
+    const mats = Array.isArray(n.material) ? n.material : [n.material];
+    for (const m of mats) {
+      if (!m) continue;
+      m.map?.dispose?.();
+      m.emissiveMap?.dispose?.();
+      m.dispose?.();
+    }
+  });
+  reconGeo.dispose();
+  reconMesh.material.dispose();
+
+  const th = THRESHOLDS[def.cls];
+  const decorations = result.decorations.length;
+  // Decoration count is FAIL-gating only above the hard cap; below the
+  // quality-floor MIN_DECORATIONS it's a non-failing UNDERSPEND warning
+  // (budget left on the table, not a correctness problem).
+  const overCap = decorations > MAX_DECORATIONS;
+  const underspend = decorations < MIN_DECORATIONS;
+  // Per-metric gate (see THRESHOLDS comment above): PASS/FAIL is decided by
+  // these three booleans only. FaithScore (fs) is reported but never gates.
+  const gates = {
+    iou: meanIoU >= th.iou,
+    deltaE: meanDE <= th.de,
+    count: !overCap,
+  };
+  const pass = gates.iou && gates.deltaE && gates.count;
+
+  return {
+    model: def.name,
+    cls: def.cls,
+    faithScore: fs,
+    meanIoU,
+    minIoU,
+    meanDeltaE: meanDE,
+    decorations,
+    overCap,
+    underspend,
+    gates,
+    pass,
+    perView,
+    thumbs: { gSrc, gRecon, worstOverlay, worstIou: minIoU, alignmentOverlay },
+  };
+}
+
+// ---------- UI wiring ----------
+const tbody = document.getElementById("results-body");
+const statusEl = document.getElementById("status");
+const runBtn = document.getElementById("btn-run");
+const jsonBar = document.getElementById("jsonbar");
+
+const rows = new Map(); // name -> { tr, detailTr }
+for (const def of MODELS) {
+  const tr = document.createElement("tr");
+  const detailTr = document.createElement("tr");
+  detailTr.className = "detail-row";
+  detailTr.innerHTML = `<td colspan="8"><div class="thumbs"></div></td>`;
+  detailTr.hidden = true;
+  if (def.skip) {
+    tr.className = "pending";
+    tr.innerHTML = `
+      <td>${def.name}</td><td>${def.cls}</td>
+      <td>–</td><td>–</td><td>–</td>
+      <td>–</td><td>–</td>
+      <td class="pf">SKIPPED <span class="badge" title="${def.skipReason}">${def.skipReason}</span></td>`;
+  } else {
+    tr.className = "pending";
+    tr.innerHTML = `
+      <td>${def.name}</td><td>${def.cls}</td>
+      <td class="fs">–</td><td class="iou">–</td><td class="miniou">–</td>
+      <td class="de">–</td><td class="dec">–</td><td class="pf">pending</td>`;
+  }
+  tbody.appendChild(tr);
+  tbody.appendChild(detailTr);
+  rows.set(def.name, { tr, detailTr });
+}
+
+function renderRow(def, r) {
+  const { tr, detailTr } = rows.get(def.name);
+  tr.className = r.pass ? "pass" : "fail";
+  tr.querySelector(".fs").textContent = r.faithScore.toFixed(1);
+  tr.querySelector(".iou").textContent = r.meanIoU.toFixed(3);
+  tr.querySelector(".miniou").textContent = r.minIoU.toFixed(3);
+  tr.querySelector(".de").textContent = r.meanDeltaE.toFixed(2);
+  const decCell = tr.querySelector(".dec");
+  decCell.textContent = r.decorations;
+  if (r.overCap) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.style.color = "#ff6b6b";
+    badge.textContent = "OVER CAP";
+    decCell.appendChild(badge);
+  } else if (r.underspend) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "UNDERSPEND";
+    decCell.appendChild(badge);
+  }
+  if (r.pass) {
+    tr.querySelector(".pf").textContent = "PASS";
+  } else {
+    const failed = [];
+    if (!r.gates.iou) failed.push("IoU");
+    if (!r.gates.deltaE) failed.push("ΔE");
+    if (!r.gates.count) failed.push("Cap");
+    tr.querySelector(".pf").textContent = `FAIL (${failed.join("+")})`;
+  }
+
+  const thumbs = detailTr.querySelector(".thumbs");
+  thumbs.innerHTML = "";
+  const g = thumbGroup("Gameplay-distance view (source | reconstruction)");
+  addThumb(g.pair, r.thumbs.gSrc, "Source");
+  addThumb(g.pair, r.thumbs.gRecon, "Reconstruction");
+  thumbs.appendChild(g.wrap);
+
+  const w = thumbGroup(`Worst view overlay — IoU ${r.thumbs.worstIou.toFixed(3)} (red=source only, green=recon only, yellow=both)`);
+  addThumb(w.pair, r.thumbs.worstOverlay, "Worst-IoU overlay");
+  thumbs.appendChild(w.wrap);
+
+  if (r.thumbs.alignmentOverlay) {
+    const a = thumbGroup("Alignment sanity check (red=source only, green=recon only, yellow=both)");
+    addThumb(a.pair, r.thumbs.alignmentOverlay, "Alignment overlay");
+    thumbs.appendChild(a.wrap);
+  }
+  detailTr.hidden = false;
+}
+
+let results = [];
+
+async function runAll() {
+  runBtn.disabled = true;
+  results = [];
+  const scoredModels = MODELS.filter((def) => !def.skip);
+  let firstScored = true;
+  for (let i = 0; i < MODELS.length; i++) {
+    const def = MODELS[i];
+    if (def.skip) {
+      // row already renders as SKIPPED at setup time — nothing to run.
+      continue;
+    }
+    statusEl.textContent = `Running ${def.name} (${scoredModels.indexOf(def) + 1}/${scoredModels.length})…`;
+    try {
+      const r = await processModel(def, firstScored);
+      firstScored = false;
+      results.push(r);
+      renderRow(def, r);
+    } catch (err) {
+      console.error(`similarity harness: ${def.name} failed`, err);
+      const { tr } = rows.get(def.name);
+      tr.className = "fail";
+      tr.querySelector(".pf").textContent = "ERROR: " + err.message;
+    }
+  }
+  const skippedCount = MODELS.length - scoredModels.length;
+  statusEl.textContent = `Done — ${results.length}/${scoredModels.length} models scored` +
+    (skippedCount ? `, ${skippedCount} skipped.` : ".");
+  runBtn.disabled = false;
+  window.__RESULTS__ = results;
+  offerDownload(results);
+}
+
+function offerDownload(results) {
+  jsonBar.innerHTML = "";
+  const payload = results.map((r) => ({
+    model: r.model,
+    faithScore: r.faithScore,
+    meanIoU: r.meanIoU,
+    minIoU: r.minIoU,
+    meanDeltaE: r.meanDeltaE,
+    decorations: r.decorations,
+    overCap: r.overCap,
+    underspend: r.underspend,
+    gates: r.gates,
+    pass: r.pass,
+    perView: r.perView,
+  }));
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.className = "dl";
+  a.href = url;
+  a.download = "similarity-results.json";
+  a.textContent = "Download results.json";
+  jsonBar.appendChild(a);
+}
+
+runBtn.addEventListener("click", runAll);
+
+if (new URLSearchParams(location.search).get("auto") === "1") {
+  runAll();
+}
+</script>
+</body>
+</html>

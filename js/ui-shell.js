@@ -104,6 +104,7 @@ export function renderShell(root, {
         <span data-i18n="param.mode"></span>
         <select id="p-mode">
           <option value="direct" selected data-i18n="mode.direct"></option>
+          <option value="hyper" data-i18n="mode.hyper"></option>
           <option value="voxel" data-i18n="mode.voxel"></option>
           <option value="pixel" data-i18n="mode.pixel"></option>
         </select>
@@ -146,6 +147,14 @@ export function renderShell(root, {
           <span data-i18n="param.planar"></span>
           <input type="number" id="p-planar" value="1" min="0" max="30" step="0.25">
         </label>
+      </div>
+
+      <div id="hyper-params" class="mode-group" hidden>
+        <label class="row" data-i18n-title="tip.hyper.colors">
+          <span><span data-i18n="hyper.colors"></span> <em id="v-hypercolors">32</em></span>
+          <input type="range" id="p-hypercolors" min="4" max="64" value="32" step="2">
+        </label>
+        <div class="hint2" data-i18n="hyper.hint"></div>
       </div>
 
       <div id="voxel-params" class="mode-group" hidden>
@@ -250,6 +259,8 @@ export function renderShell(root, {
       <summary data-i18n="panel.result"></summary>
       <div id="gen-stats" class="stat-grid"></div>
       <div id="gen-warnings"></div>
+      <button id="btn-score" class="secondary" disabled data-i18n="btn.score" data-i18n-title="tip.btn.score"></button>
+      <div id="score-result" class="stat-grid"></div>
     </details>
 
     <footer>

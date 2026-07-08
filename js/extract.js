@@ -67,16 +67,76 @@ function materialInfo(mat, cache) {
   // three's Color is linear after loaders convert sRGB; convertLinearToSRGB
   // for display-accurate color matching
   const srgb = new THREE.Color(c.r, c.g, c.b).convertLinearToSRGB();
+  const color = [
+    Math.round(srgb.r * 255),
+    Math.round(srgb.g * 255),
+    Math.round(srgb.b * 255),
+  ];
+  // WYSIWYG: emissive contributes to the displayed color — fold it in so
+  // glowing features (screens, eyes, neon) don't arrive black
+  if (mat.emissive && (mat.emissive.r || mat.emissive.g || mat.emissive.b)) {
+    const k = mat.emissiveIntensity ?? 1;
+    const em = new THREE.Color(
+      mat.emissive.r * k, mat.emissive.g * k, mat.emissive.b * k,
+    ).convertLinearToSRGB();
+    color[0] = Math.min(255, color[0] + Math.round(em.r * 255));
+    color[1] = Math.min(255, color[1] + Math.round(em.g * 255));
+    color[2] = Math.min(255, color[2] + Math.round(em.b * 255));
+  }
   const info = {
-    color: [
-      Math.round(srgb.r * 255),
-      Math.round(srgb.g * 255),
-      Math.round(srgb.b * 255),
-    ],
-    texture: mat.map ? textureToPixels(mat.map) : null,
+    color,
+    // an emissive-only material (no base map) still shows its emissiveMap
+    texture: mat.map
+      ? textureToPixels(mat.map)
+      : mat.emissiveMap
+        ? textureToPixels(mat.emissiveMap)
+        : null,
   };
   cache.set(mat, info);
   return info;
+}
+
+// WYSIWYG: three renders vertex colors when material.vertexColors is set —
+// extract them (converted to display sRGB 0..255, stride 3) so the
+// converter sees the same colors the viewport shows.
+function vertexColors(node, mat, geo) {
+  const attr = geo.getAttribute('color');
+  if (!attr || !mat?.vertexColors) return null;
+  const n = attr.count;
+  const out = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    c.setRGB(attr.getX(i), attr.getY(i), attr.getZ(i)).convertLinearToSRGB();
+    out[i * 3] = c.r * 255;
+    out[i * 3 + 1] = c.g * 255;
+    out[i * 3 + 2] = c.b * 255;
+  }
+  return out;
+}
+
+// WYSIWYG: skinned meshes render with their current pose applied on the
+// GPU; raw position attributes are the bind pose. Bake the displayed
+// skinned positions so the conversion matches the viewport.
+function bakedPositions(node, geo) {
+  const pos = geo.getAttribute('position');
+  if (!node.isSkinnedMesh || !node.skeleton) {
+    return Float32Array.from(pos.array.slice(0, pos.count * 3));
+  }
+  try {
+    node.skeleton.update();
+    const out = new Float32Array(pos.count * 3);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      node.boneTransform(i, v); // skinned position in mesh-local space
+      out[i * 3] = v.x;
+      out[i * 3 + 1] = v.y;
+      out[i * 3 + 2] = v.z;
+    }
+    return out;
+  } catch (e) {
+    console.warn('skin baking failed, using bind pose', e);
+    return Float32Array.from(pos.array.slice(0, pos.count * 3));
+  }
 }
 
 // Returns { meshes: SourceMesh[], triangleCount, meshCount,
@@ -117,9 +177,10 @@ export function extractMeshes(root) {
       }
       triangleCount += indices.length / 3;
       out.push({
-        positions: Float32Array.from(posAttr.array.slice(0, posAttr.count * 3)),
+        positions: bakedPositions(node, geo),
         indices,
         uvs: uvAttr ? Float32Array.from(uvAttr.array.slice(0, uvAttr.count * 2)) : null,
+        colors: vertexColors(node, mat, geo),
         matrixWorld: node.matrixWorld.toArray(),
         color,
         texture,
