@@ -41,7 +41,7 @@ export const DEFAULT_PARAMS = {
   merge: true,           // coplanar same-color merge pass
   planarAngleDeg: 1,     // coplanarity tolerance for merging
   weldEps: 1e-4,         // vertex weld distance (meters)
-  maxDecorations: 4995,  // hard cap (5 models x 999); excess dropped smallest-first
+  maxDecorations: 99900, // hard cap (100 models x 999); excess dropped smallest-first
   thinScale: 0.01,       // decoration thin-axis scale (X for triangles, Y for squares)
   eulerOrder: 'YXZ',     // rotation decomposition order (engine convention)
   minTriangleArea: 1e-8, // m^2, drop degenerates

@@ -55,6 +55,9 @@ export function computeEditorStats(decorations, { budget = Infinity } = {}) {
   if (models > 1) {
     warnings.push({ key: "w.split", params: { n: num(models) } });
   }
+  if (count > 4995) {
+    warnings.push({ key: "w.toolarge", params: { n: num(count), m: num(models) } });
+  }
   return { count, byKind, uniqueColors: colors.size, models, perModel, overZoom, warnings };
 }
 

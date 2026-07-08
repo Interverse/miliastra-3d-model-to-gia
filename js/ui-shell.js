@@ -29,7 +29,7 @@ export function renderShell(root, {
     </label>
     <div class="sidebar-scroll">
 
-    <details class="panel" open>
+    <details class="panel" id="panel-model" open>
       <summary data-i18n="panel.model"></summary>
       <label class="filedrop" id="filedrop">
         <input type="file" id="file-input" multiple
@@ -54,7 +54,7 @@ export function renderShell(root, {
       <button id="btn-clear" class="secondary" data-i18n="btn.clear" data-i18n-title="tip.btn.clear"></button>
     </details>
 
-    <details class="panel" open>
+    <details class="panel" id="panel-transform" open>
       <summary data-i18n="panel.transform"></summary>
       <label class="row" data-i18n-title="tip.tf.unit">
         <span data-i18n="tf.unit"></span>
@@ -80,7 +80,7 @@ export function renderShell(root, {
       <div class="hint2" data-i18n="tf.hint"></div>
     </details>
 
-    <details class="panel" open>
+    <details class="panel" id="panel-params" open>
       <summary data-i18n="panel.params"></summary>
 
       <div class="hint2" id="sprite-param-note" hidden data-i18n="note.spriteparams"></div>
@@ -96,8 +96,8 @@ export function renderShell(root, {
       </label>
 
       <label class="row" data-i18n-title="tip.param.max">
-        <span><span data-i18n="param.max"></span> <em id="v-max">4995</em></span>
-        <input type="number" id="p-max" value="4995" min="1" max="99900" step="1">
+        <span><span data-i18n="param.max"></span> <em id="v-max">99900</em></span>
+        <input type="number" id="p-max" value="99900" min="1" max="99900" step="1">
       </label>
 
       <label class="row" id="row-mode" data-i18n-title="tip.param.mode">
@@ -249,6 +249,7 @@ export function renderShell(root, {
     <details class="panel" open>
       <summary data-i18n="panel.result"></summary>
       <div id="gen-stats" class="stat-grid"></div>
+      <div id="gen-warnings"></div>
     </details>
 
     <footer>
@@ -321,6 +322,8 @@ export function renderShell(root, {
       <button id="nav-proj" data-i18n="nav.persp" data-i18n-title="tip.nav.proj"></button>
     </div>
 
+    <button id="btn-tutorial" data-i18n-title="tip.tut">❓ <span data-i18n="tut.btn"></span></button>
+
     <div id="vp-status">
       <span id="st-decs" data-i18n-title="tip.st.decs"></span>
       <span id="st-sel" data-i18n-title="tip.st.sel"></span>
@@ -334,14 +337,14 @@ export function renderShell(root, {
     <div class="resize-handle" id="resize-right"></div>
     <div class="rb-scroll">
 
-    <details class="panel" open>
+    <details class="panel" id="panel-scene" open>
       <summary data-i18n="panel.scene"></summary>
       <div id="recon-list" data-i18n-title="tip.recon.list"></div>
       <div class="hint2" id="scene-empty" data-i18n="scene.empty"></div>
       <button id="btn-clear-recons" class="secondary" hidden data-i18n="scene.clear" data-i18n-title="tip.scene.clear"></button>
     </details>
 
-    <details class="panel" open>
+    <details class="panel" id="panel-selection" open>
       <summary data-i18n="panel.selection"></summary>
       <div id="ed-selinfo" class="hint2"></div>
       <div class="btn-row">
@@ -404,13 +407,13 @@ export function renderShell(root, {
       <div class="hint2" data-i18n="sel.hintshortcuts"></div>
     </details>
 
-    <details class="panel" open>
+    <details class="panel" id="panel-stats" open>
       <summary data-i18n="panel.stats"></summary>
       <div id="edit-stats" class="stat-grid"></div>
       <div id="stat-warnings"></div>
     </details>
 
-    <details class="panel" open>
+    <details class="panel" id="panel-optimize" open>
       <summary data-i18n="panel.optimize"></summary>
       <label class="row" data-i18n-title="tip.opt.tol">
         <span><span data-i18n="opt.tol"></span> <em id="v-opttol">0</em></span>

@@ -20,6 +20,14 @@ export function setupTexturePanel(getEl, onTextureChange) {
 
   // ---------- pipeline ----------
 
+  // Full-resolution buffers (up to 2048²) make per-pixel rebuilds heavier,
+  // so slider drags are debounced — one rebuild per pause, not per event.
+  let rebuildTimer = 0;
+  function scheduleRebuild() {
+    clearTimeout(rebuildTimer);
+    rebuildTimer = setTimeout(rebuild, 80);
+  }
+
   function rebuild() {
     if (!active) return;
     const { texture, original } = active;
@@ -127,10 +135,10 @@ export function setupTexturePanel(getEl, onTextureChange) {
         };
         const [lab, fmt] = labels[id];
         $(lab).textContent = fmt($(id).value);
-        rebuild();
+        scheduleRebuild();
       });
     }
-    $("tx-invert").addEventListener("change", rebuild);
+    $("tx-invert").addEventListener("change", scheduleRebuild);
     $("tx-reset").addEventListener("click", () => {
       if (!active) return;
       for (const [id, val] of [["tx-colors", 0], ["tx-hue", 0], ["tx-sat", 100], ["tx-bri", 0], ["tx-con", 0]]) {

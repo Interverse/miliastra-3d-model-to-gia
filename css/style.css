@@ -699,6 +699,156 @@ footer {
 footer a {
   color: #7ec8ff;
 }
+/* floating Tutorial button — visible but out of the way (top-left) */
+#btn-tutorial {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  background: rgba(27, 30, 36, 0.9);
+  color: #9aa3b0;
+  border: 1px solid #3a4150;
+  z-index: 25;
+}
+#btn-tutorial:hover:not(:disabled) {
+  background: #2a2e36;
+  color: #d8dbe0;
+}
+
+/* first-visit welcome bubble pointing at the Tutorial button */
+#tut-welcome {
+  position: absolute;
+  left: 12px;
+  top: 50px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1b1e24;
+  border: 1px solid #2d6cdf;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #d8dbe0;
+  z-index: 26;
+  max-width: 320px;
+}
+#tut-welcome button.mini,
+#gen-notice button.mini {
+  width: auto;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.tut-x {
+  background: none !important;
+  color: #6b7482 !important;
+  padding: 4px 6px !important;
+}
+.tut-x:hover {
+  color: #d8dbe0 !important;
+}
+
+/* tutorial overlay: spotlight hole + popover */
+#tut-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+#tut-overlay .tut-hole {
+  position: fixed;
+  border-radius: 8px;
+  box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.6);
+  border: 2px solid #2d6cdf;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+#tut-overlay .tut-pop {
+  position: fixed;
+  background: #1b1e24;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #d8dbe0;
+  font-size: 13px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+#tut-overlay .tut-pop h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+#tut-overlay .tut-body {
+  color: #9aa3b0;
+  line-height: 1.45;
+}
+#tut-overlay .tut-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+#tut-overlay .tut-prog {
+  flex: 1;
+  color: #6b7482;
+  font-size: 11px;
+}
+#tut-overlay .tut-bar button.mini {
+  width: auto;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+#tut-overlay .tut-next {
+  background: #2d6cdf;
+  color: #fff;
+}
+
+/* post-generation notice (base model hidden, restorable) */
+#gen-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 42px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(27, 30, 36, 0.95);
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #d8dbe0;
+  z-index: 30;
+  max-width: min(92%, 560px);
+}
+#gen-notice button.mini {
+  width: auto;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+#gen-notice .gen-notice-x {
+  background: none;
+  color: #6b7482;
+  padding: 4px 6px;
+}
+#gen-notice .gen-notice-x:hover:not(:disabled) {
+  background: none;
+  color: #d8dbe0;
+}
+
+/* generation warnings under the Conversion result stats */
+#gen-warnings .warn-row {
+  display: flex;
+  gap: 6px;
+  color: #f0b429;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
 /* clipboard-import chooser (multiple files pasted) */
 #paste-modal {
   position: fixed;

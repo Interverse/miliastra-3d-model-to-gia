@@ -3,7 +3,12 @@
 // base color material, and base color texture are used.
 import * as THREE from 'three';
 
-const MAX_TEX_SIZE = 512;
+// Full fidelity up to 2048 so texture-edit write-backs are lossless for
+// typical textures (a lossy 512 cap blurred hard edges and made block
+// textures bleed at UV-island borders). Larger sources downscale
+// PROPORTIONALLY — clamping each axis independently squashed non-square
+// textures.
+const MAX_TEX_SIZE = 2048;
 
 function textureToPixels(tex) {
   const img = tex?.image;
@@ -11,8 +16,9 @@ function textureToPixels(tex) {
   try {
     const srcW = img.width || 0, srcH = img.height || 0;
     if (!srcW || !srcH) return null;
-    const w = Math.min(srcW, MAX_TEX_SIZE);
-    const h = Math.min(srcH, MAX_TEX_SIZE);
+    const k = Math.min(1, MAX_TEX_SIZE / Math.max(srcW, srcH));
+    const w = Math.max(1, Math.round(srcW * k));
+    const h = Math.max(1, Math.round(srcH * k));
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });

@@ -22,6 +22,7 @@ import {
 import { PRESETS } from "../engine/convert/converter.js";
 import { decimateTriangles } from "../engine/convert/decimate.js";
 import { t, num, onLangChange } from "./i18n.js";
+import { initTutorial } from "./tutorial.js";
 
 // Initialize the app against an already-rendered shell (see ui-shell.js).
 // mode: 'gia' (download button builds a .gia file) or 'primitives' (the
@@ -40,8 +41,42 @@ export function initApp({ mode = "gia" } = {}) {
         new ImageData(new Uint8ClampedArray(textureObj.data), textureObj.width, textureObj.height),
         0, 0,
       );
-      t.material.map.image = cv;
-      t.material.map.needsUpdate = true;
+      const map = t.material.map;
+      if (map.isDataTexture || map.isCompressedTexture || map.image?.data !== undefined) {
+        // Data textures (e.g. TGA) upload from image.data — swapping in a
+        // canvas breaks/flips them. Replace with an equivalent CanvasTexture
+        // carrying over every mapping property. Extracted rows are stored
+        // top-down, so flipY=true reproduces the data texture's v=0-at-
+        // bottom orientation exactly.
+        const nt = new THREE.CanvasTexture(cv);
+        nt.flipY = true;
+        nt.wrapS = map.wrapS;
+        nt.wrapT = map.wrapT;
+        nt.repeat.copy(map.repeat);
+        nt.offset.copy(map.offset);
+        nt.rotation = map.rotation;
+        nt.center.copy(map.center);
+        if (map.channel !== undefined) nt.channel = map.channel;
+        nt.colorSpace = map.colorSpace;
+        nt.anisotropy = map.anisotropy;
+        nt.magFilter = map.magFilter;
+        if (
+          map.minFilter === THREE.NearestFilter ||
+          map.minFilter === THREE.LinearFilter
+        ) {
+          nt.minFilter = map.minFilter;
+          nt.generateMipmaps = false;
+        }
+        t.material.map = nt;
+        t.material.needsUpdate = true;
+      } else {
+        // regular image textures: swap the pixels in place — dimensions and
+        // orientation match the extracted buffer, and every texture
+        // transform (repeat/offset/rotation/flipY) is untouched, so the UV
+        // mapping cannot shift
+        map.image = cv;
+        map.needsUpdate = true;
+      }
     }
   });
   const worker = new Worker(new URL("./convert-worker.js", import.meta.url), {
@@ -60,7 +95,7 @@ export function initApp({ mode = "gia" } = {}) {
       offsetOf: () => null,
       rebuild: (light) => rebuildActiveRecon(light),
       toast: (t) => showToast(t),
-      budget: () => Math.max(1, parseInt($("p-max").value, 10) || 4995),
+      budget: () => Math.max(1, parseInt($("p-max").value, 10) || 99900),
       getSourceObject: () => displayedObject,
       // base-model transform <-> gizmo sync
       getModelTransform: () => ({
@@ -539,6 +574,7 @@ export function initApp({ mode = "gia" } = {}) {
       plane.position.y = h / 2;
       currentObject = plane;
       displayedObject = plane;
+      setModelToggle(true); // fresh import is always visible
       viewer.setModel(plane);
       editor.refresh();
       $("drop-hint").hidden = true;
@@ -721,10 +757,49 @@ export function initApp({ mode = "gia" } = {}) {
   }
   $("p-prevdec").addEventListener("change", updateDecimPreview);
 
+  // Model visibility toggle (viewport toolbar) — the editor wires the click
+  // handler; this sets the state programmatically and keeps both in sync.
+  function setModelToggle(on) {
+    $("tb-model").classList.toggle("pressed", on);
+    viewer.setModelVisible(on);
+    if (on) hideGenNotice();
+  }
+
+  // Post-generation notice: the base model was hidden so the generated
+  // result is visible, with a one-click restore.
+  let genNoticeTimer = 0;
+  function hideGenNotice() {
+    $("gen-notice")?.remove();
+    clearTimeout(genNoticeTimer);
+  }
+  function showGenNotice() {
+    hideGenNotice();
+    const el = document.createElement("div");
+    el.id = "gen-notice";
+    const msg = document.createElement("span");
+    msg.textContent = t("notice.hidden");
+    const show = document.createElement("button");
+    show.className = "mini";
+    show.textContent = t("notice.show");
+    show.addEventListener("click", () => setModelToggle(true));
+    const x = document.createElement("button");
+    x.className = "mini gen-notice-x";
+    x.textContent = "✕";
+    x.title = t("tip.modal.close");
+    x.addEventListener("click", hideGenNotice);
+    el.append(msg, show, x);
+    $("viewport").appendChild(el);
+    genNoticeTimer = setTimeout(hideGenNotice, 10000);
+  }
+  // manually toggling the Model button also dismisses the notice
+  $("tb-model").addEventListener("click", hideGenNotice);
+
   function setModel(object) {
     currentObject = object;
     displayedObject = object;
-    // FBX files are often authored in cm
+    // a fresh import must always be visible — re-enable the Model toggle
+    // if a previous generation (or the user) turned it off
+    setModelToggle(true);
     viewer.setModel(object);
     clearReconstructions();
     $("drop-hint").hidden = true;
@@ -883,7 +958,7 @@ export function initApp({ mode = "gia" } = {}) {
       snapDeg: parseFloat(paramInputs.snapDeg.value),
       maxDecorations: Math.max(
         1,
-        parseInt(paramInputs.maxDecorations.value, 10) || 4995,
+        parseInt(paramInputs.maxDecorations.value, 10) || 99900,
       ),
       merge: paramInputs.merge.checked,
       thinScale: parseFloat(paramInputs.thinScale.value) || 0.01,
@@ -975,8 +1050,16 @@ export function initApp({ mode = "gia" } = {}) {
     }
     setActiveRecon(id);
     renderReconList();
+    // when a result is displayed, show it Solid + Wireframe rather than the
+    // wireframe-only overlay (an explicit Solid choice is respected)
+    if ($("p-overlay").value === "wireframe") $("p-overlay").value = "both";
     updateOverlays();
     editor.onGenerated();
+    // prioritize the generated preview: hide the base model (restorable)
+    if (currentObject && $("tb-model").classList.contains("pressed")) {
+      setModelToggle(false);
+      showGenNotice();
+    }
   };
 
   function setActiveRecon(id) {
@@ -1118,6 +1201,24 @@ export function initApp({ mode = "gia" } = {}) {
         ? { [t("mi.size")]: `${s.bounds.x} × ${s.bounds.y} × ${s.bounds.z}` }
         : {}),
     });
+
+    // prominent warnings under the stats: truncated geometry / huge output
+    const warnEl = $("gen-warnings");
+    if (warnEl) {
+      const warns = [];
+      if (s.dropped) {
+        warns.push(t("w.truncated", { n: num(s.dropped) }));
+      }
+      if (s.placements > 4995) {
+        warns.push(t("w.toolarge", { n: num(s.placements), m: num(models) }));
+      }
+      warnEl.innerHTML = warns
+        .map((w) => `<div class="warn-row">⚠ <span></span></div>`)
+        .join("");
+      [...warnEl.querySelectorAll("span")].forEach((sp, i) => {
+        sp.textContent = warns[i];
+      });
+    }
   }
 
   // The conversion never repositions output (the model origin is preserved),
@@ -1429,6 +1530,9 @@ export function initApp({ mode = "gia" } = {}) {
   // camera navigation gizmo + projection switching
   createNavGizmo(viewer);
   viewer.onProjectionChange = (cam) => editor.onCameraChanged(cam);
+
+  // interactive tutorial + first-visit welcome bubble
+  initTutorial();
 
   // live language switching: re-render everything dynamic (the static shell
   // is re-applied by i18n itself via data-i18n bindings)
