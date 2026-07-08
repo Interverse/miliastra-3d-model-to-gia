@@ -48,7 +48,8 @@ export function buildPreview(decorations, params) {
     ];
     const pushTri = (a, bq, c) => {
       for (const v of [a, bq, c]) {
-        positions[o++] = v[0]; positions[o++] = v[1]; positions[o++] = v[2] * flip;
+        // display mirrors X back (decoration space is X-mirrored vs display)
+        positions[o++] = -v[0]; positions[o++] = v[1]; positions[o++] = v[2] * flip;
       }
       for (let k = 0; k < 3; k++) { colors[co++] = r; colors[co++] = g; colors[co++] = b; }
       owners[tri++] = di;

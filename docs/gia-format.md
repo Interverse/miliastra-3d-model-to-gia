@@ -122,7 +122,10 @@ all three components are always written (even 1.0).
 ### Transform semantics
 
 - Local units: 0.1 m (because the object node is scaled 0.1).
-  `position_units = meters * 10`.
+  `position_units = meters * 10`. The game's axes are Y up, +Z forward,
+  with X mirrored relative to the three.js/glTF display convention — the
+  converter mirrors X (and swaps triangle winding) when emitting
+  decorations so in-game orientation matches the source model.
 - Rotation: Euler angles in degrees, fields x/y/z. Samples show y=90, y=180,
   and (x=180, y=90). Application order assumed Unity-style intrinsic Y·X·Z
   (configurable in the converter as it cannot be fully determined from the

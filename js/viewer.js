@@ -35,7 +35,9 @@ export class Viewer {
     // dual cameras: perspective (default) + orthographic, switched via
     // setProjection(); this.camera always points at the active one
     this.cameraPersp = new THREE.PerspectiveCamera(50, 1, 0.01, 5000);
-    this.cameraPersp.position.set(3, 2.5, 4);
+    // default on the game (-X, -Z) side facing the corrected forward (+Z);
+    // display x = -(game x), so game -X is display +3
+    this.cameraPersp.position.set(3, 2.5, -4);
     this.cameraOrtho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 5000);
     this.camera = this.cameraPersp;
     this._orthoHalfH = 2;
@@ -48,15 +50,18 @@ export class Viewer {
     const hemi = new THREE.HemisphereLight(0xffffff, 0x777777, 1.1);
     this.scene.add(hemi);
     const dir = new THREE.DirectionalLight(0xffffff, 1.4);
-    dir.position.set(5, 10, 6);
+    dir.position.set(5, 10, -6); // key light on the default-camera side
     this.scene.add(dir);
     const dir2 = new THREE.DirectionalLight(0xffffff, 0.5);
-    dir2.position.set(-6, 4, -8);
+    dir2.position.set(-6, 4, 8);
     this.scene.add(dir2);
 
     this.grid = new THREE.GridHelper(10, 20, 0x3a4150, 0x262a32);
     this.scene.add(this.grid);
     this.axes = new THREE.AxesHelper(1);
+    // display space mirrors X vs the game/decoration axes — mirror the
+    // helper so the red arm points toward the game's +X
+    this.axes.scale.x = -1;
     this.scene.add(this.axes);
     // 1-meter reference: a vertical ruler at the origin with 0.25 m ticks and
     // a "1 m" label. Unlike the grid it never rescales with the model.
@@ -164,7 +169,7 @@ export class Viewer {
       const halfH = this._orthoHalfH / (this.cameraOrtho.zoom || 1);
       const nd = Math.max(0.05, halfH / Math.tan(halfFov));
       const dir = this.camera.position.clone().sub(t);
-      if (dir.lengthSq() < 1e-9) dir.set(1, 0.7, 1);
+      if (dir.lengthSq() < 1e-9) dir.set(1, 0.7, -1);
       dir.normalize();
       want.position.copy(t).addScaledVector(dir, nd);
       want.quaternion.copy(this.camera.quaternion);
@@ -226,7 +231,7 @@ export class Viewer {
     const center = box.getCenter(new THREE.Vector3());
     const radius = Math.max(size.x, size.y, size.z, 0.1);
     this.controls.target.copy(center);
-    this.camera.position.copy(center).add(new THREE.Vector3(radius * 0.9, radius * 0.7, radius * 1.2));
+    this.camera.position.copy(center).add(new THREE.Vector3(radius * 0.9, radius * 0.7, -radius * 1.2));
     this.camera.near = radius / 1000;
     this.camera.far = radius * 100;
     if (this.camera.isOrthographicCamera) {
@@ -247,7 +252,7 @@ export class Viewer {
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(size.x, size.y, size.z, 0.05) * 0.6;
     const dir = this.camera.position.clone().sub(this.controls.target);
-    if (dir.lengthSq() < 1e-9) dir.set(1, 0.7, 1);
+    if (dir.lengthSq() < 1e-9) dir.set(1, 0.7, -1);
     dir.normalize();
     const dist = (radius / Math.tan((this.cameraPersp.fov * Math.PI) / 360)) * 1.35;
     this._focusTween = {

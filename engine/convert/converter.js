@@ -274,12 +274,16 @@ export function convert(input, userParams = {}) {
     if (userR) q = matMulVec(userR, q);
     return q;
   };
-  const flipTri = (p, uv) => params.flipZ
-    ? {
-        p: [v3(p[0].x, p[0].y, -p[0].z), v3(p[2].x, p[2].y, -p[2].z), v3(p[1].x, p[1].y, -p[1].z)],
-        uv: uv ? [uv[0], uv[2], uv[1]] : null,
-      }
-    : { p, uv };
+  // Decoration space is the source mirrored across X (game convention);
+  // the optional flipZ mirrors across Z on top of it. Exactly one mirror
+  // flips the triangle winding; two mirrors (= a 180° Y rotation) cancel.
+  const flipTri = (p, uv) => {
+    const zs = params.flipZ ? -1 : 1;
+    const q = p.map((v) => v3(-v.x, v.y, v.z * zs));
+    return zs === 1
+      ? { p: [q[0], q[2], q[1]], uv: uv ? [uv[0], uv[2], uv[1]] : null }
+      : { p: q, uv };
+  };
 
   // 1. gather raw world-space triangles
   const colored = [];
@@ -644,15 +648,16 @@ function convertSpriteBoxes(sprite, params, stats, ctx) {
 
   const I = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
   let R = ctx.userR ?? I;
-  if (params.flipZ) {
-    // mirror-conjugate the user rotation across Z: M·R·M, M = diag(1,1,-1)
-    R = R.map((row, i) => row.map((v, j) => v * ((i === 2) !== (j === 2) ? -1 : 1)));
-  }
+  // decoration space mirrors X (game convention), plus optional Z mirror:
+  // conjugate the user rotation by M = diag(-1, 1, ±1)
+  const zs = params.flipZ ? -1 : 1;
+  const sgn = [-1, 1, zs];
+  R = R.map((row, i) => row.map((v, j) => v * sgn[i] * sgn[j]));
 
   const s = ctx.userS ?? 1;
   let placements = boxes.map((b) => {
     let c = ctx.userXform(b.center);
-    if (params.flipZ) c = v3(c.x, c.y, -c.z);
+    c = v3(-c.x, c.y, c.z * zs);
     return {
       kind: 'square',
       fullY: true,

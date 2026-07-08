@@ -110,10 +110,13 @@ rotation:
 | Transform | Input unit scale (source units → meters), uniform Scale, Pivot (moved to the origin), and Rotation — applied before conversion as p' = R·s·(p·unit − pivot). All of it previews live in the viewport, and when no primitives are selected the Move/Rotate/Scale gizmos grab the source model directly (two-way sync with the numeric fields) |
 | Collision | Whether exported models collide (object component 5) |
 
-The exported `.gia` uses exactly the coordinates shown in the editor: the
-model origin is preserved as-is (geometry may extend above or below it —
-nothing is recentered or snapped to the ground), so in-game placement
-relative to the model's origin matches the viewport 1:1. **Reset
+The exported `.gia` uses the game's coordinate system: Y up, +Z forward,
+and X mirrored relative to the three.js display convention (the viewport
+axes helper and navigation gizmo show the game axes, so the red X arm
+points toward the game's +X). The model origin is preserved as-is
+(geometry may extend above or below it — nothing is recentered or snapped
+to the ground), so in-game placement and orientation relative to the
+model's origin match the viewport 1:1. **Reset
 Transform** restores pivot, rotation, scale, and input unit scale to their
 defaults, and a yellow **1 m reference ruler** at the origin (toggled with
 the grid) helps judge scale.
@@ -179,7 +182,7 @@ panel).
 
 **Navigation gizmo** — the axis ball in the top-right corner mirrors the
 camera orientation. Click an axis knob to snap to the standard views
-(±X = Right/Left, ±Y = Top/Bottom, ±Z = Front/Back, animated), or drag the
+(±X = Right/Left, ±Y = Top/Bottom, −Z = Front / +Z = Back, animated), or drag the
 ball to free-orbit. The button underneath toggles between **Perspective**
 and **Orthographic** projection; switching keeps the view visually stable,
 and every editor feature (picking, marquee, gizmos) works in both

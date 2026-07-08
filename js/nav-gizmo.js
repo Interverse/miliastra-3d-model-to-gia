@@ -9,12 +9,16 @@
 import * as THREE from "three";
 
 const AXES = [
-  { dir: new THREE.Vector3(1, 0, 0), label: "X", color: "#e5534b", view: "Right" },
-  { dir: new THREE.Vector3(-1, 0, 0), label: "-X", color: "#e5534b", view: "Left" },
+  // display space mirrors X vs the game axes: the game's +X lies toward
+  // display -X, so the "X / Right" knob points at display (-1, 0, 0)
+  { dir: new THREE.Vector3(-1, 0, 0), label: "X", color: "#e5534b", view: "Right" },
+  { dir: new THREE.Vector3(1, 0, 0), label: "-X", color: "#e5534b", view: "Left" },
   { dir: new THREE.Vector3(0, 1, 0), label: "Y", color: "#57ab5a", view: "Top" },
   { dir: new THREE.Vector3(0, -1, 0), label: "-Y", color: "#57ab5a", view: "Bottom" },
-  { dir: new THREE.Vector3(0, 0, 1), label: "Z", color: "#539bf5", view: "Front" },
-  { dir: new THREE.Vector3(0, 0, -1), label: "-Z", color: "#539bf5", view: "Back" },
+  // corrected axes: +Z is the model's forward, so the Front view looks
+  // along +Z from the -Z side
+  { dir: new THREE.Vector3(0, 0, 1), label: "Z", color: "#539bf5", view: "Back" },
+  { dir: new THREE.Vector3(0, 0, -1), label: "-Z", color: "#539bf5", view: "Front" },
 ];
 
 export function createNavGizmo(viewer) {
