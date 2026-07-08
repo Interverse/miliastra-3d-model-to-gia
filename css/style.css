@@ -580,6 +580,11 @@ button.secondary:hover:not(:disabled) {
   margin: 0 3px 0 1px;
   font-size: 12px;
 }
+.tb-select:disabled {
+  color: #4a5160;
+  border-color: #2a2e36;
+  cursor: not-allowed;
+}
 
 /* contextual place bar */
 #tb-place {

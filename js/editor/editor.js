@@ -889,6 +889,7 @@ export function createEditor({ viewer, ctx }) {
         break;
       case "f": focusSelection(); break;
       case "g": $("tb-grid").click(); break;
+      case "o": $("tb-output").click(); break;
       case "x": $("tb-space").click(); break;
       case "delete":
       case "backspace":

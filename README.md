@@ -198,8 +198,12 @@ the tool, the right button orbits, and the middle button pans.
 Scale **R**, Place **T**; **Space** cycles Move → Rotate → Scale),
 World/Local gizmo axes (**X**), grid snapping (hold **Ctrl** to invert
 temporarily; snap step configurable), Focus on selection (**F**), and
-visibility toggles for the source model, grid (**G**), axes, and the overlay
-style (wireframe / solid / both / hidden). The status bar shows live
+visibility toggles for the source model, grid (**G**), and axes. A separate
+Output group toggles the generated output — all reconstructions in the
+scene — on and off (**O**) and picks its draw style (wireframe / solid /
+both); the style selector is disabled while the output is hidden.
+Individual reconstructions can still be shown/hidden per row in the Scene
+panel. The status bar shows live
 decoration/selection/model counts, the estimated .gia size, and any
 warnings. With no primitives selected, Move/Rotate/Scale manipulate the
 source model itself (pivot/rotation/scale, synced with the Transform

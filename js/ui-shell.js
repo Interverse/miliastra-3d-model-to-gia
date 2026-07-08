@@ -289,11 +289,13 @@ export function renderShell(root, {
         <button class="tb-btn tb-toggle pressed" id="tb-model" data-i18n="tb.model" data-i18n-title="tip.tb.model"></button>
         <button class="tb-btn tb-toggle pressed" id="tb-grid" data-i18n="tb.grid" data-i18n-title="tip.tb.grid"></button>
         <button class="tb-btn tb-toggle pressed" id="tb-axes" data-i18n="tb.axes" data-i18n-title="tip.tb.axes"></button>
+      </div>
+      <div class="tb-group">
+        <button class="tb-btn tb-toggle pressed" id="tb-output" data-i18n="tb.output" data-i18n-title="tip.tb.output"></button>
         <select id="p-overlay" class="tb-select" data-i18n-title="tip.overlay">
           <option value="wireframe" selected data-i18n="overlay.wire"></option>
           <option value="solid" data-i18n="overlay.solid"></option>
           <option value="both" data-i18n="overlay.both"></option>
-          <option value="off" data-i18n="overlay.off"></option>
         </select>
       </div>
     </div>

@@ -1123,7 +1123,9 @@ export function initApp({ mode = "gia" } = {}) {
   // The conversion never repositions output (the model origin is preserved),
   // so decorations always display at their exact exported coordinates.
   function updateOverlays() {
-    const mode = $("p-overlay").value;
+    const shown = $("tb-output").classList.contains("pressed");
+    $("p-overlay").disabled = !shown;
+    const mode = shown ? $("p-overlay").value : "off";
     const entries = reconstructions.map((e) => ({
       visible: e.visible,
       positions: e.msg.positions,
@@ -1135,6 +1137,10 @@ export function initApp({ mode = "gia" } = {}) {
   }
 
   $("p-overlay").addEventListener("change", updateOverlays);
+  $("tb-output").addEventListener("click", () => {
+    $("tb-output").classList.toggle("pressed");
+    updateOverlays();
+  });
 
   function activeRecon() {
     return reconstructions.find((r) => r.id === activeReconId) ?? null;
