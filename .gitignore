@@ -19,6 +19,11 @@ Thumbs.db
 .idea/
 *.swp
 
+# Claude
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+
 # Logs
 *.log
 npm-debug.log*

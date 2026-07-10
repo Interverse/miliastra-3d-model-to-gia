@@ -116,7 +116,11 @@ export function initApp({ mode = "gia" } = {}) {
           set("t-ry", rotateDeg.y);
           set("t-rz", rotateDeg.z);
         }
-        if (scale != null) set("t-scale", scale);
+        if (scale != null) {
+          set("t-sx", scale.x ?? scale);
+          set("t-sy", scale.y ?? scale);
+          set("t-sz", scale.z ?? scale);
+        }
         applyUserTransformPreview(false);
       },
       estimateSize: (decorations) => {
@@ -500,15 +504,19 @@ export function initApp({ mode = "gia" } = {}) {
 
   // ---------- 2D sprite -> 3D mode ----------
 
-  async function imageFileToPixels(file, maxSize = 512) {
+  // Native resolution up to 2048, and PROPORTIONAL downscaling beyond it —
+  // clamping each axis independently squashed non-square images (a 420×720
+  // image imported as 420×512).
+  async function imageFileToPixels(file, maxSize = 2048) {
     const bmp = await createImageBitmap(file);
-    const w = Math.min(bmp.width, maxSize),
-      h = Math.min(bmp.height, maxSize);
+    const k = Math.min(1, maxSize / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * k));
+    const h = Math.max(1, Math.round(bmp.height * k));
     const cv = document.createElement("canvas");
     cv.width = w;
     cv.height = h;
     const cx = cv.getContext("2d", { willReadFrequently: true });
-    cx.imageSmoothingEnabled = w !== bmp.width;
+    cx.imageSmoothingEnabled = k < 1;
     cx.drawImage(bmp, 0, 0, w, h);
     return { width: w, height: h, data: cx.getImageData(0, 0, w, h).data };
   }
@@ -887,14 +895,17 @@ export function initApp({ mode = "gia" } = {}) {
   });
 
   // live user transform: mirror on the displayed model immediately
-  const transformIds = ["t-px", "t-py", "t-pz", "t-rx", "t-ry", "t-rz", "t-scale"];
+  const transformIds = ["t-px", "t-py", "t-pz", "t-rx", "t-ry", "t-rz", "t-sx", "t-sy", "t-sz"];
   function readUserTransform() {
     const n = (id) => parseFloat($(id).value) || 0;
-    const s = parseFloat($("t-scale").value);
+    const sc = (id) => {
+      const v = parseFloat($(id).value);
+      return Number.isFinite(v) && v > 0 ? v : 1;
+    };
     return {
       pivot: { x: n("t-px"), y: n("t-py"), z: n("t-pz") },
       rotateDeg: { x: n("t-rx"), y: n("t-ry"), z: n("t-rz") },
-      scale: Number.isFinite(s) && s > 0 ? s : 1,
+      scale: { x: sc("t-sx"), y: sc("t-sy"), z: sc("t-sz") },
     };
   }
   // syncEditor=false when the change originates from the editor's own gizmo
@@ -910,7 +921,7 @@ export function initApp({ mode = "gia" } = {}) {
   $("p-unit").addEventListener("input", () => applyUserTransformPreview());
   $("t-reset").addEventListener("click", () => {
     for (const id of ["t-px", "t-py", "t-pz", "t-rx", "t-ry", "t-rz"]) $(id).value = 0;
-    $("t-scale").value = 1;
+    for (const id of ["t-sx", "t-sy", "t-sz"]) $(id).value = 1;
     $("p-unit").value = 1;
     applyUserTransformPreview();
     showToast(t("t.reset"));

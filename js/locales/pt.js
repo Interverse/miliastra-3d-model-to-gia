@@ -33,7 +33,7 @@ export default {
   "tf.unit": "Escala de unidades de entrada",
   "tip.tf.unit": "Multiplicador das unidades do modelo para metros — ex.: use 0,01 para um modelo criado em centímetros (comum em FBX)",
   "tf.scale": "Escala",
-  "tip.tf.scale": "Escala uniforme aplicada ao modelo (após a escala de unidades) — pré-visualizada ao vivo e gravada na saída gerada",
+  "tip.tf.scale": "Escala por eixo (X/Y/Z) aplicada ao modelo (após a escala de unidades) — pré-visualizada ao vivo e gravada na saída gerada",
   "tf.pivot": "Pivô (m)",
   "tip.tf.pivot": "Ponto do modelo (metros, X/Y/Z) movido para a origem antes da conversão — use para reposicionar o pivô",
   "tf.rot": "Rotação (°)",

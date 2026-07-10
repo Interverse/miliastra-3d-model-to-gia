@@ -33,7 +33,7 @@ export default {
   "tf.unit": "Eingabe-Einheitenskala",
   "tip.tf.unit": "Multiplikator von Modelleinheiten zu Metern — z. B. 0,01 für ein in Zentimetern erstelltes Modell (bei FBX üblich)",
   "tf.scale": "Skalierung",
-  "tip.tf.scale": "Gleichmäßige Skalierung des Modells (nach der Einheitenskala) — live in der Vorschau und in die erzeugte Ausgabe eingebacken",
+  "tip.tf.scale": "Achsweise Skalierung (X/Y/Z) des Modells (nach der Einheitenskala) — live in der Vorschau und in die erzeugte Ausgabe eingebacken",
   "tf.pivot": "Pivot (m)",
   "tip.tf.pivot": "Punkt im Modell (Meter, X/Y/Z), der vor der Konvertierung zum Ursprung verschoben wird — zum Neupositionieren des Pivots",
   "tf.rot": "Rotation (°)",

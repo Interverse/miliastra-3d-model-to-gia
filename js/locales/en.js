@@ -34,7 +34,7 @@ export default {
   "tf.unit": "Input unit scale",
   "tip.tf.unit": "Multiplier from the model's units to meters — e.g. use 0.01 for a model authored in centimeters (common for FBX)",
   "tf.scale": "Scale",
-  "tip.tf.scale": "Uniform scale applied to the model (after unit scaling) — previewed live and baked into the generated output",
+  "tip.tf.scale": "Per-axis scale (X/Y/Z) applied to the model (after unit scaling) — previewed live and baked into the generated output",
   "tf.pivot": "Pivot (m)",
   "tip.tf.pivot": "Point in the model (meters, X/Y/Z) that is moved to the origin before conversion — use it to reposition the pivot",
   "tf.rot": "Rotation (°)",

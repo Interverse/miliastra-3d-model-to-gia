@@ -33,7 +33,7 @@ export default {
   "tf.unit": "Girdi birim ölçeği",
   "tip.tf.unit": "Model birimlerinden metreye çarpan — ör. santimetreyle hazırlanmış bir model için 0,01 kullanın (FBX'te yaygın)",
   "tf.scale": "Ölçek",
-  "tip.tf.scale": "Modele uygulanan tekdüze ölçek (birim ölçeğinden sonra) — canlı önizlenir ve üretilen çıktıya işlenir",
+  "tip.tf.scale": "Modele eksen başına uygulanan ölçek (X/Y/Z, birim ölçeğinden sonra) — canlı önizlenir ve üretilen çıktıya işlenir",
   "tf.pivot": "Pivot (m)",
   "tip.tf.pivot": "Dönüştürmeden önce orijine taşınan model noktası (metre, X/Y/Z) — pivotu yeniden konumlandırmak için kullanın",
   "tf.rot": "Döndürme (°)",

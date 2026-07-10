@@ -33,7 +33,7 @@ export default {
   "tf.unit": "Scala unità di input",
   "tip.tf.unit": "Moltiplicatore dalle unità del modello ai metri — es. usa 0,01 per un modello creato in centimetri (comune per FBX)",
   "tf.scale": "Scala",
-  "tip.tf.scale": "Scala uniforme applicata al modello (dopo la scala unità) — anteprima in tempo reale e integrata nell'output generato",
+  "tip.tf.scale": "Scala per asse (X/Y/Z) applicata al modello (dopo la scala unità) — anteprima in tempo reale e integrata nell'output generato",
   "tf.pivot": "Perno (m)",
   "tip.tf.pivot": "Punto del modello (metri, X/Y/Z) spostato all'origine prima della conversione — usalo per riposizionare il perno",
   "tf.rot": "Rotazione (°)",

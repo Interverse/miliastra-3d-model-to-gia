@@ -33,7 +33,7 @@ export default {
   "tf.unit": "Échelle des unités d'entrée",
   "tip.tf.unit": "Multiplicateur des unités du modèle vers les mètres — p. ex. 0,01 pour un modèle créé en centimètres (courant en FBX)",
   "tf.scale": "Échelle",
-  "tip.tf.scale": "Échelle uniforme appliquée au modèle (après l'échelle d'unités) — prévisualisée en direct et intégrée à la sortie générée",
+  "tip.tf.scale": "Échelle par axe (X/Y/Z) appliquée au modèle (après l'échelle d'unités) — prévisualisée en direct et intégrée à la sortie générée",
   "tf.pivot": "Pivot (m)",
   "tip.tf.pivot": "Point du modèle (mètres, X/Y/Z) déplacé à l'origine avant la conversion — sert à repositionner le pivot",
   "tf.rot": "Rotation (°)",

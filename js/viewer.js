@@ -433,11 +433,13 @@ export class Viewer {
   setModelVisible(v) { this.modelGroup.visible = v; }
 
   // Mirror the engine's user pre-transform on the displayed source model:
-  // p' = R * s * (p_m - pivot), p_m = unitScale * p_src, rotation Euler YXZ
-  // degrees.
+  // p' = R * s∘(p_m - pivot), p_m = unitScale * p_src, rotation Euler YXZ
+  // degrees. userScale may be a number (uniform) or {x,y,z} (per-axis).
   setUserTransform(pivot, rotateDeg, userScale = 1, unitScale = 1) {
-    const s = userScale || 1;
-    const k = s * (unitScale || 1);
+    const s = typeof userScale === 'object' && userScale
+      ? { x: userScale.x || 1, y: userScale.y || 1, z: userScale.z || 1 }
+      : { x: userScale || 1, y: userScale || 1, z: userScale || 1 };
+    const u = unitScale || 1;
     const e = new THREE.Euler(
       (rotateDeg?.x ?? 0) * Math.PI / 180,
       (rotateDeg?.y ?? 0) * Math.PI / 180,
@@ -445,11 +447,11 @@ export class Viewer {
       'YXZ',
     );
     this.modelGroup.rotation.copy(e);
-    this.modelGroup.scale.setScalar(k);
+    this.modelGroup.scale.set(s.x * u, s.y * u, s.z * u);
     const p = new THREE.Vector3(
-      -s * (pivot?.x ?? 0),
-      -s * (pivot?.y ?? 0),
-      -s * (pivot?.z ?? 0),
+      -s.x * (pivot?.x ?? 0),
+      -s.y * (pivot?.y ?? 0),
+      -s.z * (pivot?.z ?? 0),
     );
     p.applyEuler(e);
     this.modelGroup.position.copy(p);

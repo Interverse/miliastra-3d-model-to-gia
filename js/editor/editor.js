@@ -140,14 +140,18 @@ export function createEditor({ viewer, ctx }) {
       y: r4(eul.y * DEG),
       z: r4(eul.z * DEG),
     };
-    // scale: keep uniform (average the axes, re-normalize the proxy)
-    let s = (Math.abs(gizmoProxy.scale.x) + Math.abs(gizmoProxy.scale.y) + Math.abs(gizmoProxy.scale.z)) / 3;
-    s = Math.min(10000, Math.max(0.0001, r4(s)));
-    gizmoProxy.scale.setScalar(s);
-    // pivot from the display position: pos = R * (-s * pivot)
+    // scale: per-axis (X/Y/Z scale independently in the Transform section)
+    const cl = (v) => Math.min(10000, Math.max(0.0001, r4(Math.abs(v))));
+    const s = {
+      x: cl(gizmoProxy.scale.x),
+      y: cl(gizmoProxy.scale.y),
+      z: cl(gizmoProxy.scale.z),
+    };
+    gizmoProxy.scale.set(s.x, s.y, s.z);
+    // pivot from the display position: pos = R * (-s∘pivot)
     const v = gizmoProxy.position.clone();
     v.applyQuaternion(gizmoProxy.quaternion.clone().invert());
-    const pivot = { x: r4(-v.x / s), y: r4(-v.y / s), z: r4(-v.z / s) };
+    const pivot = { x: r4(-v.x / s.x), y: r4(-v.y / s.y), z: r4(-v.z / s.z) };
     ctx.setModelTransform({ pivot, rotateDeg, scale: s });
   }
 
@@ -229,7 +233,10 @@ export function createEditor({ viewer, ctx }) {
       // no primitive selection: the gizmo manipulates the BASE MODEL and
       // stays in sync with the Transform section
       const mt = ctx.getModelTransform();
-      const s = mt.scale || 1;
+      const ms = mt.scale;
+      const s = typeof ms === "object" && ms
+        ? { x: ms.x || 1, y: ms.y || 1, z: ms.z || 1 }
+        : { x: ms || 1, y: ms || 1, z: ms || 1 };
       const RAD = Math.PI / 180;
       const eul = new THREE.Euler(
         (mt.rotateDeg?.x ?? 0) * RAD,
@@ -239,12 +246,12 @@ export function createEditor({ viewer, ctx }) {
       );
       gizmoProxy.quaternion.setFromEuler(eul);
       const p = new THREE.Vector3(
-        -s * (mt.pivot?.x ?? 0),
-        -s * (mt.pivot?.y ?? 0),
-        -s * (mt.pivot?.z ?? 0),
+        -s.x * (mt.pivot?.x ?? 0),
+        -s.y * (mt.pivot?.y ?? 0),
+        -s.z * (mt.pivot?.z ?? 0),
       ).applyEuler(eul);
       gizmoProxy.position.copy(p);
-      gizmoProxy.scale.setScalar(s);
+      gizmoProxy.scale.set(s.x, s.y, s.z);
       gizmoProxy.updateMatrixWorld(true);
       gizmo.attach(gizmoProxy);
       gizmo.enabled = true;

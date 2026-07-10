@@ -33,7 +33,7 @@ export default {
   "tf.unit": "Tỷ lệ đơn vị đầu vào",
   "tip.tf.unit": "Hệ số nhân từ đơn vị của mô hình sang mét — ví dụ dùng 0,01 cho mô hình tạo bằng xentimét (thường gặp với FBX)",
   "tf.scale": "Tỷ lệ",
-  "tip.tf.scale": "Tỷ lệ đồng nhất áp dụng cho mô hình (sau tỷ lệ đơn vị) — xem trước trực tiếp và ghi vào kết quả tạo ra",
+  "tip.tf.scale": "Tỷ lệ theo từng trục (X/Y/Z) áp dụng cho mô hình (sau tỷ lệ đơn vị) — xem trước trực tiếp và ghi vào kết quả tạo ra",
   "tf.pivot": "Điểm gốc (m)",
   "tip.tf.pivot": "Điểm trong mô hình (mét, X/Y/Z) được đưa về gốc tọa độ trước khi chuyển đổi — dùng để dời điểm gốc",
   "tf.rot": "Xoay (°)",

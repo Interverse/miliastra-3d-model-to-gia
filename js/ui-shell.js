@@ -60,10 +60,12 @@ export function renderShell(root, {
         <span data-i18n="tf.unit"></span>
         <input type="number" id="p-unit" value="1" min="0.0001" step="0.1">
       </label>
-      <label class="row" data-i18n-title="tip.tf.scale">
+      <div class="row-triple" data-i18n-title="tip.tf.scale">
         <span data-i18n="tf.scale"></span>
-        <input type="number" id="t-scale" value="1" min="0.0001" step="0.1">
-      </label>
+        <input type="number" id="t-sx" value="1" min="0.0001" step="0.1">
+        <input type="number" id="t-sy" value="1" min="0.0001" step="0.1">
+        <input type="number" id="t-sz" value="1" min="0.0001" step="0.1">
+      </div>
       <div class="row-triple" data-i18n-title="tip.tf.pivot">
         <span data-i18n="tf.pivot"></span>
         <input type="number" id="t-px" value="0" step="0.1">

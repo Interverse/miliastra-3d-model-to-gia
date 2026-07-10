@@ -132,7 +132,7 @@ rotation:
 | Flip Z | Mirror across Z — off by default (the game shares the source Z convention); enable if a model imports front-to-back flipped |
 | Euler order | Rotation convention used by the target engine (default YXZ) |
 | Alpha cutoff | Texture regions below this alpha generate no geometry (fully transparent pixels are always skipped) |
-| Transform | Input unit scale (source units → meters), uniform Scale, Pivot (moved to the origin), and Rotation — applied before conversion as p' = R·s·(p·unit − pivot). All of it previews live in the viewport, and when no primitives are selected the Move/Rotate/Scale gizmos grab the source model directly (two-way sync with the numeric fields) |
+| Transform | Input unit scale (source units → meters), per-axis Scale (X/Y/Z), Pivot (moved to the origin), and Rotation — applied before conversion as p' = R·s∘(p·unit − pivot). All of it previews live in the viewport, and when no primitives are selected the Move/Rotate/Scale gizmos grab the source model directly (two-way sync with the numeric fields) |
 | Collision | Whether exported models collide (object component 5) |
 
 The exported `.gia` uses the game's coordinate system: Y up, +Z forward,

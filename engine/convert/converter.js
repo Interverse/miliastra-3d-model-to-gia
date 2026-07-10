@@ -261,16 +261,21 @@ export function convert(input, userParams = {}) {
     bounds: null,
   };
 
-  // user pre-transform (source space, meters): p' = R * s * (p - pivot)
+  // user pre-transform (source space, meters): p' = R * s∘(p - pivot)
+  // userScale: number (uniform) or {x,y,z} (independent per-axis scaling)
   const hasPivot = params.pivot && (params.pivot.x || params.pivot.y || params.pivot.z);
   const hasRot = params.rotateDeg && (params.rotateDeg.x || params.rotateDeg.y || params.rotateDeg.z);
-  const userS = params.userScale > 0 ? params.userScale : 1;
+  const us = params.userScale;
+  const userS = typeof us === 'object' && us
+    ? { x: us.x > 0 ? us.x : 1, y: us.y > 0 ? us.y : 1, z: us.z > 0 ? us.z : 1 }
+    : { x: us > 0 ? us : 1, y: us > 0 ? us : 1, z: us > 0 ? us : 1 };
+  const hasScale = userS.x !== 1 || userS.y !== 1 || userS.z !== 1;
   const userR = hasRot ? eulerYXZToMat({
     x: params.rotateDeg.x * RAD, y: params.rotateDeg.y * RAD, z: params.rotateDeg.z * RAD,
   }) : null;
   const userXform = (q) => {
     if (hasPivot) q = sub(q, params.pivot);
-    if (userS !== 1) q = mul(q, userS);
+    if (hasScale) q = v3(q.x * userS.x, q.y * userS.y, q.z * userS.z);
     if (userR) q = matMulVec(userR, q);
     return q;
   };
@@ -654,18 +659,19 @@ function convertSpriteBoxes(sprite, params, stats, ctx) {
   const sgn = [-1, 1, zs];
   R = R.map((row, i) => row.map((v, j) => v * sgn[i] * sgn[j]));
 
-  const s = ctx.userS ?? 1;
+  const s = ctx.userS ?? { x: 1, y: 1, z: 1 };
   let placements = boxes.map((b) => {
     let c = ctx.userXform(b.center);
     c = v3(-c.x, c.y, c.z * zs);
+    const sx = b.size.x * s.x, sy = b.size.y * s.y, sz = b.size.z * s.z;
     return {
       kind: 'square',
       fullY: true,
       position: c,
       rotation: R,
-      scale: v3(b.size.x * s, b.size.y * s, b.size.z * s),
+      scale: v3(sx, sy, sz),
       color: b.color,
-      area: s * s * Math.max(b.size.x * b.size.y, b.size.x * b.size.z, b.size.y * b.size.z),
+      area: Math.max(sx * sy, sx * sz, sy * sz),
     };
   });
   stats.afterDecimation = placements.length;

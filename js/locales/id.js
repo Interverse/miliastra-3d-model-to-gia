@@ -33,7 +33,7 @@ export default {
   "tf.unit": "Skala satuan masukan",
   "tip.tf.unit": "Pengali dari satuan model ke meter — mis. gunakan 0,01 untuk model yang dibuat dalam sentimeter (umum pada FBX)",
   "tf.scale": "Skala",
-  "tip.tf.scale": "Skala seragam yang diterapkan pada model (setelah skala satuan) — dipratinjau langsung dan dibakar ke keluaran",
+  "tip.tf.scale": "Skala per sumbu (X/Y/Z) yang diterapkan pada model (setelah skala satuan) — dipratinjau langsung dan dibakar ke keluaran",
   "tf.pivot": "Pivot (m)",
   "tip.tf.pivot": "Titik pada model (meter, X/Y/Z) yang dipindahkan ke titik asal sebelum konversi — gunakan untuk memindahkan pivot",
   "tf.rot": "Rotasi (°)",
