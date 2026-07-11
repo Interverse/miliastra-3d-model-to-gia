@@ -12,9 +12,18 @@
 //
 // Overdraw mode (opts.overdraw): each face first gets ONE background square
 // in its dominant color, then only the differing texel regions are layered
-// on top, offset by 0.001 m along the face normal (no z-fighting, far fewer
-// decorations, same final appearance). Faces with transparent texels keep
-// the exact per-texel layout.
+// on top along the face normal (far fewer decorations, same appearance).
+//
+// Layering (all modes): every emitted square is slightly inflated in-plane
+// (EPS_XY per side) so adjacent squares overlap instead of meeting at
+// hairline seams, and squares are grouped by the 3D plane they lie on: any
+// two squares on the same plane whose inflated footprints overlap are
+// forced onto different depth levels (offset LAYER per level along the
+// face normal). A square layered on top of another (overdraw foreground
+// over its background) always gets a strictly higher level. This removes
+// both seams and coplanar z-fighting — including between squares emitted
+// by different faces of the same flat surface — with the smallest offsets
+// that survive in-game quantization.
 //
 // rawTris: [{ p:[v0,v1,v2], uv, mesh }]
 // opts: { alphaCutoff, mergeTolerance, maxTexelsPerFace, overdraw }
@@ -24,16 +33,19 @@ import { sampleTexture, colorDistance } from './color.js';
 import { weldTriangles } from './mesh-ops.js';
 
 const EPS_INT = 0.02; // how close a UV span must be to an integer texel count
+const LAYER = 0.001;    // m offset along the face normal per depth level
+const EPS_XY = 0.0005;  // m in-plane inflation per side (seam closing)
 
 export function pixelPerfect(rawTris, opts = {}) {
   const alphaCutoff = Math.max(0.004, opts.alphaCutoff ?? 0.5);
   const mergeTol = opts.mergeTolerance ?? 0;
   const maxTexels = opts.maxTexelsPerFace ?? 16384;
   const overdraw = !!opts.overdraw;
-  const LAYER = 0.001; // m offset along the face normal per overdraw layer
 
   const { ids } = weldTriangles(rawTris, opts.weldEps ?? 1e-4);
   const placements = [];
+  const staged = []; // { pl, n, faceId, isBg } — layered + flushed at the end
+  let faceSeq = 0;
   const used = new Array(rawTris.length).fill(false);
   let texels = 0, transparent = 0;
 
@@ -89,10 +101,11 @@ export function pixelPerfect(rawTris, opts = {}) {
     const base = mesh?.color ?? [255, 255, 255];
     const eB = sub(B, A), eC = sub(C, A);
     const lenB = len(eB), lenC = len(eC);
+    const faceId = faceSeq++;
 
     // no texture: single solid square covering the face
     if (!tex || !tri.uv) {
-      pushRect(A, eB, eC, 0, 0, 1, 1, 1, 1, base, n);
+      pushRect(A, eB, eC, 0, 0, 1, 1, 1, 1, base, n, faceId, false);
       return true;
     }
 
@@ -144,10 +157,10 @@ export function pixelPerfect(rawTris, opts = {}) {
     }
 
     // overdraw layering: one dominant-color background square + only the
-    // differing regions on top (offset LAYER along the normal). Requires a
-    // fully opaque face, otherwise the background would fill holes.
+    // differing regions on top (raised along the normal by the layering
+    // pass). Requires a fully opaque face, otherwise the background would
+    // fill holes.
     let skipIdx = -2; // cluster index handled by the background (none)
-    let fgOffset = null;
     if (overdraw && clusters.length > 1) {
       let hasTransparent = false;
       const counts = new Array(clusters.length).fill(0);
@@ -158,9 +171,8 @@ export function pixelPerfect(rawTris, opts = {}) {
       if (!hasTransparent) {
         let dom = 0;
         for (let k = 1; k < counts.length; k++) if (counts[k] > counts[dom]) dom = k;
-        pushRect(A, eB, eC, 0, 0, 1, 1, nU, nV, clusters[dom], n, null);
+        pushRect(A, eB, eC, 0, 0, 1, 1, nU, nV, clusters[dom], n, faceId, true);
         skipIdx = dom;
-        fgOffset = mul(n, LAYER);
       }
     }
 
@@ -181,16 +193,16 @@ export function pixelPerfect(rawTris, opts = {}) {
         }
         for (let y = jv; y <= j1; y++)
           for (let x = iu; x <= i1; x++) usedCell[y * nU + x] = 1;
-        pushRect(A, eB, eC, iu / nU, jv / nV, (i1 + 1) / nU, (j1 + 1) / nV, nU, nV, clusters[cIdx], n, fgOffset);
+        pushRect(A, eB, eC, iu / nU, jv / nV, (i1 + 1) / nU, (j1 + 1) / nV, nU, nV,
+          clusters[cIdx], n, faceId, false);
       }
     }
     return true;
   }
 
   // rectangle sub-region [u0,u1]x[v0,v1] (edge fractions) of face A + eB,eC;
-  // layerOff shifts the rect along the face normal (overdraw layering)
-  function pushRect(A, eB, eC, u0, v0, u1, v1, nU, nV, color, n, layerOff) {
-    if (layerOff) A = add(A, layerOff);
+  // staged (not final): the layering pass assigns depth levels + inflation
+  function pushRect(A, eB, eC, u0, v0, u1, v1, nU, nV, color, n, faceId, isBg) {
     const P0 = add(A, add(mul(eB, u0), mul(eC, v0)));
     const wu = mul(eB, u1 - u0), wv = mul(eC, v1 - v0);
     const lu = len(wu), lv = len(wv);
@@ -198,30 +210,148 @@ export function pixelPerfect(rawTris, opts = {}) {
     const x = mul(wu, 1 / lu);
     const z = mul(wv, 1 / lv);
     let y = cross(z, x); // det[x,y,z] = +1
-    if (n && dot(y, n) < 0) {
-      // flip to match the face normal: swap edge roles
-      const pl = {
-        kind: 'square',
-        position: add(P0, mul(add(wu, wv), 0.5)),
-        rotation: matFromCols(z, cross(x, z), x),
-        scale: v3(lv, 1, lu),
-        color,
-        area: lu * lv,
-      };
-      placements.push(pl);
-      return;
-    }
-    placements.push({
-      kind: 'square',
-      position: add(P0, mul(add(wu, wv), 0.5)),
-      rotation: matFromCols(x, y, z),
-      scale: v3(lu, 1, lv),
-      color,
-      area: lu * lv,
-    });
+    const pl = n && dot(y, n) < 0
+      ? { // flip to match the face normal: swap edge roles
+          kind: 'square',
+          position: add(P0, mul(add(wu, wv), 0.5)),
+          rotation: matFromCols(z, cross(x, z), x),
+          scale: v3(lv, 1, lu),
+          color,
+          area: lu * lv,
+        }
+      : {
+          kind: 'square',
+          position: add(P0, mul(add(wu, wv), 0.5)),
+          rotation: matFromCols(x, y, z),
+          scale: v3(lu, 1, lv),
+          color,
+          area: lu * lv,
+        };
+    // slab outward normal = rotation column 1 (thin axis), aligned with n
+    const nrm = n ?? v3(pl.rotation[0][1], pl.rotation[1][1], pl.rotation[2][1]);
+    staged.push({ pl, n: nrm, faceId, isBg });
   }
+
+  assignLayering(staged, placements);
 
   const rest = [];
   for (let t = 0; t < rawTris.length; t++) if (!used[t]) rest.push(rawTris[t]);
   return { placements, rest, texels, transparent };
+}
+
+// ---- plane-global depth layering + in-plane inflation ----------------------
+//
+// Groups staged squares by the 3D plane they lie on (canonical normal +
+// signed distance), finds pairs whose inflated footprints overlap, and
+// assigns each square the smallest depth level such that
+//   • a foreground square sits strictly above its face's background, and
+//   • no two conflicting squares share the same signed offset
+//     (offset = own normal × level × LAYER; squares on opposite sides of
+//     the same plane can share level numbers safely — they move apart).
+// Then inflates every square by EPS_XY per side and applies the offset.
+function assignLayering(staged, placements) {
+  // canonical plane basis per group
+  const groups = new Map();
+  for (const s of staged) {
+    let m = s.n;
+    // canonical direction: flip so the dominant component is positive
+    const ax = Math.abs(m.x), ay = Math.abs(m.y), az = Math.abs(m.z);
+    const dom = ax >= ay && ax >= az ? m.x : ay >= az ? m.y : m.z;
+    const flip = dom < 0 ? -1 : 1;
+    m = mul(m, flip);
+    const a1 = norm(Math.abs(m.y) < 0.9 ? cross(m, v3(0, 1, 0)) : cross(m, v3(1, 0, 0)));
+    const a2 = cross(m, a1);
+    const d = dot(m, s.pl.position);
+    const key = `${Math.round(m.x * 1e3)},${Math.round(m.y * 1e3)},${Math.round(m.z * 1e3)},${Math.round(d * 1e4)}`;
+    let g = groups.get(key);
+    if (!g) { g = { m, a1, a2, items: [] }; groups.set(key, g); }
+    // 2D oriented footprint in the canonical basis
+    const R = s.pl.rotation;
+    const ex = v3(R[0][0], R[1][0], R[2][0]); // in-plane axis for scale.x
+    const ez = v3(R[0][2], R[1][2], R[2][2]); // in-plane axis for scale.z
+    g.items.push({
+      s,
+      sign: dot(s.n, m) < 0 ? -1 : 1,
+      cu: dot(g.a1, s.pl.position), cv: dot(g.a2, s.pl.position),
+      xu: dot(g.a1, ex), xv: dot(g.a2, ex),
+      zu: dot(g.a1, ez), zv: dot(g.a2, ez),
+      hx: s.pl.scale.x / 2 + EPS_XY, hz: s.pl.scale.z / 2 + EPS_XY,
+      level: -1, // assigned by the leveling pass
+      conflicts: null,
+    });
+  }
+
+  // 2D SAT overlap of two oriented rectangles (inflated half-extents)
+  const overlap2D = (a, b) => {
+    const axes = [
+      [a.xu, a.xv], [a.zu, a.zv], [b.xu, b.xv], [b.zu, b.zv],
+    ];
+    const du = b.cu - a.cu, dv = b.cv - a.cv;
+    for (const [u, v] of axes) {
+      const dist = Math.abs(du * u + dv * v);
+      const ra = a.hx * Math.abs(a.xu * u + a.xv * v) + a.hz * Math.abs(a.zu * u + a.zv * v);
+      const rb = b.hx * Math.abs(b.xu * u + b.xv * v) + b.hz * Math.abs(b.zu * u + b.zv * v);
+      if (dist > ra + rb - 1e-9) return false;
+    }
+    return true;
+  };
+
+  for (const g of groups.values()) {
+    const items = g.items;
+    // sweep over u-extent to prune the O(n²) pair loop
+    const uMin = (it) => it.cu - (Math.abs(it.xu) * it.hx + Math.abs(it.zu) * it.hz);
+    const uMax = (it) => it.cu + (Math.abs(it.xu) * it.hx + Math.abs(it.zu) * it.hz);
+    items.sort((p, q) => uMin(p) - uMin(q));
+    const active = [];
+    for (const it of items) {
+      it.conflicts = [];
+      const lo = uMin(it);
+      for (let k = active.length - 1; k >= 0; k--) {
+        if (uMax(active[k]) < lo - 1e-9) active.splice(k, 1);
+      }
+      for (const other of active) {
+        if (!overlap2D(it, other)) continue;
+        it.conflicts.push(other);
+        other.conflicts.push(it);
+      }
+      active.push(it);
+    }
+
+    // assign levels: all backgrounds first, then foregrounds (a face's
+    // foreground must clear its background before any tie-breaking)
+    const bgLevel = new Map(); // faceId -> background level
+    const order = [...items].sort((p, q) => (p.s.isBg ? 0 : 1) - (q.s.isBg ? 0 : 1));
+    for (const it of order) {
+      let min = 0;
+      const taken = new Set(); // signed offsets already used by neighbors
+      for (const other of it.conflicts) {
+        if (other.level < 0) continue; // not assigned yet
+        if (other.s.faceId === it.s.faceId && other.s.isBg && !it.s.isBg) {
+          min = Math.max(min, other.level + 1); // fg strictly above own bg
+        } else if (other.sign === it.sign) {
+          taken.add(other.level); // same side: one plane per level
+        } else if (other.level === 0) {
+          taken.add(0); // opposite sides both unmoved would coincide
+        }
+      }
+      if (!it.s.isBg) {
+        const bl = bgLevel.get(it.s.faceId);
+        if (bl != null) min = Math.max(min, bl + 1);
+      }
+      let lv = min;
+      while (taken.has(lv)) lv++;
+      it.level = lv;
+      if (it.s.isBg) bgLevel.set(it.s.faceId, lv);
+    }
+  }
+
+  for (const g of groups.values()) {
+    for (const it of g.items) {
+      const pl = it.s.pl;
+      if (it.level > 0) pl.position = add(pl.position, mul(it.s.n, it.level * LAYER));
+      pl.scale = v3(pl.scale.x + 2 * EPS_XY, pl.scale.y, pl.scale.z + 2 * EPS_XY);
+      pl.area = pl.scale.x * pl.scale.z;
+      placements.push(pl);
+    }
+  }
 }

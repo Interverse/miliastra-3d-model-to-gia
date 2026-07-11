@@ -27,6 +27,8 @@ export default {
   "tip.sprite.thick": "Profondità di estrusione dello sprite 3D generato, in metri — lo spessore del volume da davanti a dietro",
   "sprite.px": "Dimensione pixel (m/px)",
   "tip.sprite.px": "Dimensione nel mondo di un pixel dello sprite, in metri — un'immagine larga 16 pixel a 0,05 diventa larga 0,8 m",
+  "sprite.od": "Ottimizzazione overdraw",
+  "tip.sprite.od": "Unisce i pixel in rettangoli sovrapposti dipinti da dietro in avanti (fusione validata, sottopittura e beam search); i rettangoli dipinti sopra ricevono scatole leggermente più spesse — aspetto identico con molte meno decorazioni",
   "btn.clear": "↻ Cancella modello e texture",
   "tip.btn.clear": "Rimuove il modello caricato, tutte le immagini/texture caricate e i materiali, e reimposta il viewport",
 

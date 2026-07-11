@@ -27,6 +27,8 @@ export default {
   "tip.sprite.thick": "Profundidade de extrusão do sprite 3D gerado, em metros — a espessura do volume de frente para trás",
   "sprite.px": "Tamanho do pixel (m/px)",
   "tip.sprite.px": "Tamanho no mundo de um pixel do sprite, em metros — uma imagem de 16 pixels de largura a 0,05 fica com 0,8 m",
+  "sprite.od": "Otimização por sobredesenho",
+  "tip.sprite.od": "Funde pixels em retângulos sobrepostos pintados de trás para a frente (fusão validada, subpintura e busca em feixe); retângulos pintados por cima recebem caixas um pouco mais espessas — aparência exatamente igual com muito menos decorações",
   "btn.clear": "↻ Limpar modelo e texturas",
   "tip.btn.clear": "Remove o modelo carregado, todas as imagens/texturas enviadas e os materiais, e redefine o viewport",
 

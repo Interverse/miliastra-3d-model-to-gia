@@ -28,6 +28,8 @@ export default {
   "tip.sprite.thick": "Extrusion depth of the generated 3D sprite, in meters — how deep the sprite volume is from front to back",
   "sprite.px": "Pixel size (m/px)",
   "tip.sprite.px": "World size of one sprite pixel, in meters — a 16-pixel-wide image at 0.05 becomes 0.8 m wide",
+  "sprite.od": "Overdraw optimization",
+  "tip.sprite.od": "Merges pixels into overlapping rectangles painted back-to-front (validated merging, underpainting and beam search); rectangles painted on top get slightly thicker boxes — exact same appearance with far fewer decorations",
   "btn.clear": "↻ Clear model & textures",
   "tip.btn.clear": "Remove the loaded model, all uploaded images/textures, and materials, and reset the viewport",
 

@@ -27,6 +27,8 @@ export default {
   "tip.sprite.thick": "Extrusionstiefe des erzeugten 3D-Sprites in Metern — die Dicke des Volumens von vorn nach hinten",
   "sprite.px": "Pixelgröße (m/px)",
   "tip.sprite.px": "Weltgröße eines Sprite-Pixels in Metern — ein 16 Pixel breites Bild wird bei 0,05 zu 0,8 m Breite",
+  "sprite.od": "Overdraw-Optimierung",
+  "tip.sprite.od": "Fasst Pixel zu überlappenden, von hinten nach vorn gemalten Rechtecken zusammen (validiertes Zusammenführen, Untermalung und Beam-Suche); oben gemalte Rechtecke erhalten etwas dickere Boxen — exakt gleiches Aussehen mit weit weniger Dekorationen",
   "btn.clear": "↻ Modell & Texturen löschen",
   "tip.btn.clear": "Entfernt das geladene Modell, alle hochgeladenen Bilder/Texturen und Materialien und setzt den Viewport zurück",
 

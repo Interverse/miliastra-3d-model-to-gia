@@ -171,8 +171,14 @@ the grid) helps judge scale.
   misalignment) and only identical colors (within the Texel merge tolerance,
   default 0) are greedy-merged into squares. **Overdraw layering** (on by
   default, toggleable) gives each opaque face one background square in its
-  dominant color and layers only the differing pixel regions 0.001 m above it
-  along the face normal — same appearance, significantly fewer decorations.
+  dominant color and layers only the differing pixel regions above it along
+  the face normal — same appearance, significantly fewer decorations.
+  All emitted squares are inflated 0.5 mm per side in-plane so adjacent
+  squares overlap instead of meeting at hairline seams, and squares on the
+  same 3D plane whose inflated footprints overlap are placed on distinct
+  depth levels (1 mm apart along the face normal, smallest level first) —
+  no seams and no coplanar z-fighting, even between squares emitted by
+  different faces of the same flat surface or by double-sided geometry.
 ### Texture editing
 
 A **Texture** panel appears for textured models (a dropdown selects between
@@ -181,8 +187,9 @@ multiple textures). All edits feed the conversion directly:
 - **Color reduction** — K-means color quantization (weighted, in perceptual
   CIELAB space, k-means++ seeded and deterministic): the slider maps to a
   cluster count K (~48 colors when mild, 2 at maximum) and every pixel
-  snaps to its cluster's weighted-mean color. Fewer unique colors mean far
-  fewer generated decorations while preserving overall appearance.
+  snaps to its cluster's weighted-mean color. Shown only where it actually
+  reduces the decoration count; for imported 3D models it is hidden (model
+  decorations come from geometry, not from the texture's palette size).
 - **Recoloring** — hue shift, saturation, brightness, contrast, invert.
 - **Per-texture settings** — every texture keeps its own configuration;
   selecting another texture restores that texture's settings. With multiple
@@ -236,7 +243,9 @@ and get an orange outline (plus a faint x-ray outline where occluded).
 **Editing** — Move/Rotate/Scale gizmos work on any selection size (multi-
 object transforms pivot on the selection center; world or local axes);
 numeric position/rotation/zoom editing (multi-selection edits move the
-group); an RGB color picker; Duplicate (**Ctrl+D**), Copy/Paste
+group); an RGB color picker; Duplicate (**Ctrl+D**, or **Alt-drag** the Move
+gizmo to duplicate in place and drag the copy while the originals stay
+put — one undo step removes the copies); Copy/Paste
 (**Ctrl+C/V**), Delete (**Del**), and full undo/**redo** (**Ctrl+Z** /
 **Ctrl+Y** or **Ctrl+Shift+Z**) covering placements, deletions, transforms,
 recolors, and optimization passes. The Place tool (contextual toolbar: type,
@@ -322,6 +331,34 @@ Opaque pixels are greedy-meshed into maximal same-color rectangles and each
 rectangle becomes ONE elongated square primitive — the square decoration is
 a unit cube, so a single stretched instance covers the front face, back
 face, and all edges (far fewer decorations than per-face geometry).
+
+**Overdraw optimization** (on by default) runs the miliastra-image-to-gia
+rectangle optimizer (`engine/convert/rect-optimizer.js`, a faithful port
+of that project's `optimizer.ts`): a portfolio of
+overdraw strategies — validated pairwise rectangle merging, per-component
+underpainting (greedy + beam search), and two-stage merging — produces a
+rectangle plan in a validated back-to-front paint order that reproduces
+the image pixel-for-pixel with far fewer shapes than an exact partition
+(the reference dragon sprite drops from 2672 exact rectangles to 1695).
+In 3D the paint order maps to minimal thickness levels: a rectangle
+painted over another gets a strictly thicker box (0.5 mm per level per
+side — one in-game zoom quantum), so its faces render in front on both
+sides. Boxes are never shrunk and interior seams need no inflation —
+touching boxes always land on different thickness levels, so the thicker
+front face overlaps every shared boundary in depth and the seam renders
+watertight. Where different-color walls would share the same grid plane
+with a visibly overlapping region (above all overdraw stacks whose boxes
+end on the same outline segment: underpaint + foreground rects), each
+wall takes a slot: the largest wall keeps the exact grid line and every
+conflicting wall steps outward 1 mm per slot (+0.01 zoom per side), so
+border primitives slightly overlap outward, fully cover the shared
+boundary, and show the border pixels' true color at the rim. Conflicts
+use exact effective geometry (including the 1 mm corner tips the outsets
+themselves create) and only count regions actually exposed to empty
+pixels. Outsets are capped at a quarter pixel and can never reach an
+empty pixel's center. Appearance is preserved exactly: at every opaque
+pixel, the frontmost box carries that pixel's color. Exact (non-overdraw)
+partitions have no overlapping walls and get zero in-plane adjustment.
 
 ### Texture matching
 

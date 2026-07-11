@@ -27,6 +27,8 @@ export default {
   "tip.sprite.thick": "Độ sâu đùn của sprite 3D được tạo, tính bằng mét — độ dày từ trước ra sau",
   "sprite.px": "Kích thước pixel (m/px)",
   "tip.sprite.px": "Kích thước thế giới của một pixel sprite, tính bằng mét — ảnh rộng 16 pixel ở mức 0,05 sẽ rộng 0,8 m",
+  "sprite.od": "Tối ưu vẽ đè",
+  "tip.sprite.od": "Gộp pixel thành các hình chữ nhật chồng lấn được vẽ từ sau ra trước (gộp có kiểm chứng, lót nền và tìm kiếm chùm); hình chữ nhật vẽ đè lên trên nhận hộp dày hơn một chút — vẻ ngoài giống hệt với ít trang trí hơn nhiều",
   "btn.clear": "↻ Xóa mô hình & kết cấu",
   "tip.btn.clear": "Xóa mô hình đã tải, mọi hình ảnh/kết cấu và vật liệu đã tải lên, rồi đặt lại khung nhìn",
 

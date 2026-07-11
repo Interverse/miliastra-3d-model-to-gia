@@ -50,6 +50,10 @@ export function renderShell(root, {
           <span data-i18n="sprite.px"></span>
           <input type="number" id="p-sprite-px" value="0.05" min="0.001" max="1" step="0.01">
         </label>
+        <label class="row" data-i18n-title="tip.sprite.od">
+          <span data-i18n="sprite.od"></span>
+          <input type="checkbox" id="p-sprite-od" checked>
+        </label>
       </div>
       <button id="btn-clear" class="secondary" data-i18n="btn.clear" data-i18n-title="tip.btn.clear"></button>
     </details>
@@ -220,7 +224,7 @@ export function renderShell(root, {
       <summary data-i18n="panel.texture"></summary>
       <select id="tx-select" hidden data-i18n-title="tip.tx.select"></select>
       <canvas id="tx-canvas" data-i18n-title="tip.tx.canvas"></canvas>
-      <label class="row" data-i18n-title="tip.tx.colors">
+      <label class="row" id="row-tx-colors" data-i18n-title="tip.tx.colors">
         <span><span data-i18n="tx.colors"></span> <em id="v-txcolors"></em></span>
         <input type="range" id="tx-colors" min="0" max="100" value="0" step="1">
       </label>

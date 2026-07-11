@@ -279,7 +279,11 @@ export function setupTexturePanel(getEl, onTextureChange) {
 
   return {
     // textures: [{ texture: {width,height,data,...}, name }]
-    setTextures(list) {
+    // opts.colorReduction: show the Color Reduction slider (default true).
+    // 3D model imports pass false — reducing a model texture's palette
+    // doesn't lower the decoration count, so the slider is hidden there.
+    setTextures(list, opts = {}) {
+      $("row-tx-colors").hidden = opts.colorReduction === false;
       entries = list.map((e, i) => ({
         texture: e.texture,
         name: e.name ?? t("tx.item", { n: i + 1 }),

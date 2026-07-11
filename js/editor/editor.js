@@ -47,6 +47,7 @@ export function createEditor({ viewer, ctx }) {
   let space = "world";
   let snapOn = false;
   let ctrlHeld = false;
+  let altHeld = false;
   const selection = new Set();
   const history = new History();
   let clipboard = [];
@@ -99,12 +100,29 @@ export function createEditor({ viewer, ctx }) {
     }
     const e = recon();
     if (!e || !selection.size) return;
-    pushHistory(tool);
+    let duplicated = 0;
+    if (altHeld && tool === "move") {
+      // Alt-drag on the Move gizmo: duplicate the selection in place and
+      // drag the copies — the originals stay untouched (one history entry,
+      // so undo removes the copies again)
+      pushHistory("duplicate");
+      const src = [...selection].map((i) => e.msg.decorations[i]);
+      const base = e.msg.decorations.length;
+      e.msg.decorations.push(...cloneDecorations(src));
+      selection.clear();
+      for (let k = 0; k < src.length; k++) selection.add(base + k);
+      duplicated = src.length;
+      ctx.rebuild(true);
+      refreshSelectionUI();
+    } else {
+      pushHistory(tool);
+    }
     const c = dctx(e);
     dragStart = {
       pos: gizmoProxy.position.clone(),
       quat: gizmoProxy.quaternion.clone(),
       items: new Map(),
+      duplicated,
     };
     for (const i of selection) {
       const d = e.msg.decorations[i];
@@ -119,6 +137,7 @@ export function createEditor({ viewer, ctx }) {
   function endGizmoDrag() {
     if (!dragStart) return;
     const wasModel = dragStart.model;
+    const duplicated = dragStart.duplicated;
     dragStart = null;
     if (wasModel) {
       syncGizmo();
@@ -127,6 +146,7 @@ export function createEditor({ viewer, ctx }) {
     ctx.rebuild(false);
     refreshSelectionUI();
     syncGizmo();
+    if (duplicated) ctx.toast(t("t.duplicated", { n: num(duplicated) }));
   }
 
   // gizmo drag on the BASE MODEL: write the display transform back into the
@@ -832,6 +852,7 @@ export function createEditor({ viewer, ctx }) {
       ctrlHeld = true;
       applySnap();
     }
+    if (ev.key === "Alt") altHeld = true;
     if (isTyping(ev)) return;
     const e = recon();
     const k = ev.key.toLowerCase();
@@ -909,6 +930,23 @@ export function createEditor({ viewer, ctx }) {
   });
   window.addEventListener("keyup", (ev) => {
     if (ev.key === "Control") {
+      ctrlHeld = false;
+      applySnap();
+    }
+    if (ev.key === "Alt") altHeld = false;
+  });
+  // modifier state can go stale across focus changes (Alt+Tab); resync from
+  // the pointer event itself before the gizmo reacts to it (capture phase)
+  window.addEventListener("pointerdown", (ev) => {
+    altHeld = ev.altKey;
+    if (ctrlHeld !== ev.ctrlKey) {
+      ctrlHeld = ev.ctrlKey;
+      applySnap();
+    }
+  }, true);
+  window.addEventListener("blur", () => {
+    altHeld = false;
+    if (ctrlHeld) {
       ctrlHeld = false;
       applySnap();
     }

@@ -27,6 +27,8 @@ export default {
   "tip.sprite.thick": "Oluşturulan 3D sprite'ın kabartma derinliği, metre cinsinden — hacmin önden arkaya kalınlığı",
   "sprite.px": "Piksel boyutu (m/px)",
   "tip.sprite.px": "Bir sprite pikselinin dünya boyutu, metre cinsinden — 16 piksel genişliğindeki görsel 0,05 ile 0,8 m genişliğinde olur",
+  "sprite.od": "Üstüne çizim optimizasyonu",
+  "tip.sprite.od": "Pikselleri arkadan öne boyanan örtüşen dikdörtgenlerde birleştirir (doğrulanmış birleştirme, alt boyama ve ışın araması); üste boyanan dikdörtgenler biraz daha kalın kutular alır — birebir aynı görünüm, çok daha az dekorasyon",
   "btn.clear": "↻ Modeli ve dokuları temizle",
   "tip.btn.clear": "Yüklenen modeli, tüm görselleri/dokuları ve malzemeleri kaldırır, görüntü alanını sıfırlar",
 

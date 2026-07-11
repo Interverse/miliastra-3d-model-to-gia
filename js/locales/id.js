@@ -27,6 +27,8 @@ export default {
   "tip.sprite.thick": "Kedalaman ekstrusi sprite 3D yang dihasilkan, dalam meter — ketebalan volume dari depan ke belakang",
   "sprite.px": "Ukuran piksel (m/px)",
   "tip.sprite.px": "Ukuran dunia satu piksel sprite, dalam meter — gambar selebar 16 piksel pada 0,05 menjadi 0,8 m",
+  "sprite.od": "Optimasi overdraw",
+  "tip.sprite.od": "Menggabungkan piksel menjadi persegi panjang tumpang-tindih yang dilukis dari belakang ke depan (penggabungan tervalidasi, lapisan dasar, dan beam search); persegi panjang yang dilukis di atas mendapat kotak sedikit lebih tebal — tampilan persis sama dengan dekorasi jauh lebih sedikit",
   "btn.clear": "↻ Bersihkan model & tekstur",
   "tip.btn.clear": "Menghapus model yang dimuat, semua gambar/tekstur yang diunggah, dan material, lalu mereset viewport",
 

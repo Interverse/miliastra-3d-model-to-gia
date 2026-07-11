@@ -647,6 +647,7 @@ function convertSpriteBoxes(sprite, params, stats, ctx) {
     pixelSize: sprite.pixelSize,
     thickness: sprite.thickness,
     alphaCutoff: params.alphaCutoff,
+    overdraw: sprite.overdraw,
   });
   stats.sourceTriangles = pixels;
   stats.spritePixels = pixels;

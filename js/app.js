@@ -850,7 +850,9 @@ export function initApp({ mode = "gia" } = {}) {
         texList.push({ texture: m.texture });
       }
     }
-    texPanel.setTextures(texList);
+    // color reduction is pointless for 3D models (it doesn't reduce the
+    // decoration count), so hide that slider for model textures
+    texPanel.setTextures(texList, { colorReduction: false });
     updateDecimPreview();
     editor.refresh(); // model gizmo tools become available
   }
@@ -1026,6 +1028,7 @@ export function initApp({ mode = "gia" } = {}) {
           texture: spritePixels,
           pixelSize: parseFloat($("p-sprite-px").value) || 0.05,
           thickness: parseFloat($("p-sprite-thick").value) || 0.1,
+          overdraw: $("p-sprite-od")?.checked ?? true,
         },
         params,
       });

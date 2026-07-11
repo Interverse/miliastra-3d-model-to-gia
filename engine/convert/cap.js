@@ -69,18 +69,41 @@ function splitBox(pl, maxEdge, out) {
   ];
   if (n[0] === 1 && n[1] === 1 && n[2] === 1) { out.push(pl); return; }
   const sx = pl.scale.x / n[0], sy = pl.scale.y / n[1], sz = pl.scale.z / n[2];
+  // Overlap the cut planes slightly so no hairline seam can open between
+  // sibling pieces (same color and depth: the overlap itself is invisible).
+  // Each piece grows by 2*SEAM per split axis (one zoom quantum), but all of
+  // it goes toward the CUT sides — edge pieces keep the box's outer faces
+  // exactly, so the outer wall planes (already separated per box upstream)
+  // never drift onto another decoration's wall plane.
+  const SEAM = 0.0005; // m per side
+  const ex = n[0] > 1 ? Math.min(SEAM, (maxEdge - sx) / 2) : 0;
+  const ey = n[1] > 1 ? Math.min(SEAM, (maxEdge - sy) / 2) : 0;
+  const ez = n[2] > 1 ? Math.min(SEAM, (maxEdge - sz) / 2) : 0;
+  // per-axis expansion toward the low/high side: interior pieces grow e per
+  // side; edge pieces put both quanta on their single cut side (the center
+  // shifts by (hi-lo)/2, keeping the outer face in place)
+  const grow = (idx, count, e) => count === 1 ? [0, 0]
+    : idx === 0 ? [0, 2 * e] : idx === count - 1 ? [2 * e, 0] : [e, e];
   const X = col(pl.rotation, 0), Y = col(pl.rotation, 1), Z = col(pl.rotation, 2);
   for (let i = 0; i < n[0]; i++) {
     for (let j = 0; j < n[1]; j++) {
       for (let k = 0; k < n[2]; k++) {
+        const gx = grow(i, n[0], ex), gy = grow(j, n[1], ey), gz = grow(k, n[2], ez);
         const off = add(
-          add(mul(X, (i + 0.5 - n[0] / 2) * sx), mul(Y, pl.fullY ? (j + 0.5 - n[1] / 2) * sy : 0)),
-          mul(Z, (k + 0.5 - n[2] / 2) * sz),
+          add(
+            mul(X, (i + 0.5 - n[0] / 2) * sx + (gx[1] - gx[0]) / 2),
+            mul(Y, pl.fullY ? (j + 0.5 - n[1] / 2) * sy + (gy[1] - gy[0]) / 2 : 0),
+          ),
+          mul(Z, (k + 0.5 - n[2] / 2) * sz + (gz[1] - gz[0]) / 2),
         );
         out.push({
           ...pl,
           position: add(pl.position, off),
-          scale: v3(sx, pl.fullY ? sy : pl.scale.y, sz),
+          scale: v3(
+            sx + gx[0] + gx[1],
+            pl.fullY ? sy + gy[0] + gy[1] : pl.scale.y,
+            sz + gz[0] + gz[1],
+          ),
           area: (pl.area ?? 0) / (n[0] * n[1] * n[2]),
         });
       }

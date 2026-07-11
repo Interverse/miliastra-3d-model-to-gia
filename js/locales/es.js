@@ -27,6 +27,8 @@ export default {
   "tip.sprite.thick": "Profundidad de extrusión del sprite 3D generado, en metros: cuánto mide el volumen de delante hacia atrás",
   "sprite.px": "Tamaño de píxel (m/px)",
   "tip.sprite.px": "Tamaño en el mundo de un píxel del sprite, en metros: una imagen de 16 píxeles de ancho con 0,05 mide 0,8 m",
+  "sprite.od": "Optimización de sobredibujado",
+  "tip.sprite.od": "Fusiona píxeles en rectángulos superpuestos pintados de atrás hacia adelante (fusión validada, pintura base y búsqueda en haz); los rectángulos pintados encima reciben cajas un poco más gruesas — exactamente el mismo aspecto con muchas menos decoraciones",
   "btn.clear": "↻ Limpiar modelo y texturas",
   "tip.btn.clear": "Elimina el modelo cargado, todas las imágenes/texturas subidas y los materiales, y restablece el visor",
 
