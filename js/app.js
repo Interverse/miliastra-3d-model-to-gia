@@ -544,7 +544,9 @@ export function initApp({ mode = "gia" } = {}) {
   // is a primary sprite control, so it is lifted out of Advanced.
   function setSpriteParamsUI(on) {
     $("sprite-param-note").hidden = !on;
-    for (const id of ["row-decimate", "row-prevdec", "row-mode", "row-thin"]) {
+    // row-unit: source units are meaningless for sprites — dimensions come
+    // from the pixel size (the engine ignores unitScale on the sprite path)
+    for (const id of ["row-decimate", "row-prevdec", "row-mode", "row-thin", "row-unit"]) {
       $(id).hidden = on;
     }
     const m = $("p-mode").value;

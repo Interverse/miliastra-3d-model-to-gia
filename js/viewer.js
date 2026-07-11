@@ -85,12 +85,31 @@ export class Viewer {
     this.renderer.setAnimationLoop(() => {
       this._stepFocus();
       this.controls.update();
+      this._updateClipPlanes();
       for (const fn of this._ticks) fn();
       this.renderer.render(this.scene, this.camera);
     });
   }
 
   addTick(fn) { this._ticks.push(fn); }
+
+  // Keep near/far tracking the orbit distance BOTH ways. A fixed tiny near
+  // plane destroys depth precision once the camera zooms out (at distance d
+  // the depth resolution is ~d²/(near·2²⁴)): geometry separated by half a
+  // millimeter — one thickness level — would z-fight in the viewport even
+  // though it never does in game. near = d/50 keeps the resolution at
+  // ~3 µm per meter of distance at any zoom.
+  _updateClipPlanes() {
+    const d = Math.max(this.camera.position.distanceTo(this.controls.target), 1e-3);
+    const near = Math.max(d / 50, 1e-4);
+    const far = Math.max(2000, d * 100);
+    // avoid projection-matrix churn: update only on meaningful change
+    if (Math.abs(near / this.camera.near - 1) > 0.1 || Math.abs(far / this.camera.far - 1) > 0.1) {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
+  }
 
   _buildMeterRef() {
     const group = new THREE.Group();

@@ -60,7 +60,7 @@ export function renderShell(root, {
 
     <details class="panel" id="panel-transform" open>
       <summary data-i18n="panel.transform"></summary>
-      <label class="row" data-i18n-title="tip.tf.unit">
+      <label class="row" id="row-unit" data-i18n-title="tip.tf.unit">
         <span data-i18n="tf.unit"></span>
         <input type="number" id="p-unit" value="1" min="0.1" step="0.1">
       </label>
