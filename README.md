@@ -349,14 +349,19 @@ front face overlaps every shared boundary in depth and the seam renders
 watertight. Where different-color walls would share the same grid plane
 with a visibly overlapping region (above all overdraw stacks whose boxes
 end on the same outline segment: underpaint + foreground rects), each
-wall takes a slot: the largest wall keeps the exact grid line and every
-conflicting wall steps outward 1 mm per slot (+0.01 zoom per side), so
-border primitives slightly overlap outward, fully cover the shared
-boundary, and show the border pixels' true color at the rim. Conflicts
-use exact effective geometry (including the 1 mm corner tips the outsets
+wall takes a slot and steps outward 1 mm per slot (+0.01 zoom per side)
+in PAINT order: a later-painted wall sits strictly outside every earlier
+wall it conflicts with, so border primitives slightly overlap outward,
+fully cover the shared boundary, and the outermost wall at any point of
+the rim is the topmost paint there — it always shows that border pixel's
+true color, and an interior-colored box can never poke past the border
+boxes painted over it. The earliest wall covering each stretch of
+outline keeps the exact grid line wherever paint order allows; the rest
+bumps outward by at most a quarter pixel, in the correct color, and the
+decoration count always equals the optimizer plan exactly. Conflicts use
+exact effective geometry (including the 1 mm corner tips the outsets
 themselves create) and only count regions actually exposed to empty
-pixels. Outsets are capped at a quarter pixel and can never reach an
-empty pixel's center. Appearance is preserved exactly: at every opaque
+pixels; outsets can never reach an empty pixel's center. Appearance is preserved exactly: at every opaque
 pixel, the frontmost box carries that pixel's color. Exact (non-overdraw)
 partitions have no overlapping walls and get zero in-plane adjustment.
 

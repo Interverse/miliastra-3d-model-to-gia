@@ -51,10 +51,17 @@ const SIDE_STEP = 0.001;   // in-plane adjustment per SIDE — a full zoom
 //   foreground rects sharing an outline segment). Every wall therefore
 //   gets a SLOT per (line, direction): conflicting walls take different
 //   slots and move OUTWARD (in their facing direction) by one SIDE_STEP
-//   per slot. The largest wall keeps slot 0 — the exact outline — and each
-//   nested border-pixel wall pokes slightly out, so the boxes overlap the
-//   shared boundary completely and the outermost wall carries the border
-//   pixels' true color at the rim.
+//   per slot, following paint order — a later-painted wall sits strictly
+//   outside every earlier wall it conflicts with, so the outermost wall
+//   at any point of the rim is the topmost paint there: it always carries
+//   the border pixels' true color, and an interior-colored box can never
+//   poke past the border boxes painted over it. The earliest wall
+//   covering each stretch of outline keeps slot 0 (the exact grid line)
+//   wherever paint order allows; where a later wall also owns exclusive
+//   outline (partial overlaps), its stretch sits one slot outward — a
+//   bounded ≤¼-pixel bump in the correct color, the price of emitting the
+//   optimizer's rectangles unsplit (decoration count stays exactly the
+//   plan's).
 //
 // - Conflicts use exact effective geometry, iterated to a fixed point: a
 //   moved side extends its box's perpendicular wall spans past the
@@ -92,10 +99,12 @@ export function spriteToBoxes(texture, opts = {}) {
   const occ = (x, y) => x >= 0 && y >= 0 && x < w && y < h && grid.rows[y][x] !== 0;
   const step = Math.min(SIDE_STEP, px * 0.25); // never reach a pixel center
 
+  const dirs = [['x', 0], ['x', 1], ['y', 0], ['y', 1]];
+  const occAcross = (ax, beyond, t) => (ax === 'x' ? occ(beyond, t) : occ(t, beyond));
+
   // wall descriptor per rect and direction: line = the grid line the wall
   // sits on, [lo, hi) = span in perpendicular grid cells, beyond = the
   // row/col of pixels just across the line
-  const dirs = [['x', 0], ['x', 1], ['y', 0], ['y', 1]];
   const walls = rects.map((r) => dirs.map(([ax, end]) => {
     const line = ax === 'x' ? r.x + (end ? r.w : 0) : r.y + (end ? r.h : 0);
     return {
@@ -107,20 +116,40 @@ export function spriteToBoxes(texture, opts = {}) {
   }));
   const occBeyond = (wl, t) => wl.ax === 'x' ? occ(wl.beyond, t) : occ(t, wl.beyond);
 
-  // per-direction groups of walls on the same line, in fixed greedy order:
-  // largest grid span first (the outline owner keeps slot 0 = the exact
-  // line), then paint order
+  // per-direction groups of walls on the same line, in PAINT order: slots
+  // must follow the back-to-front paint semantics — a wall painted later
+  // (on top in 2D) sits strictly further out than every earlier wall it
+  // conflicts with, so the rim always shows the top color and an interior-
+  // colored box can never poke past the border boxes painted over it. The
+  // earliest wall (the underpaint) keeps slot 0, the exact outline.
   const groups = dirs.map((_, d) => {
     const byLine = new Map();
     for (let i = 0; i < rects.length; i++) {
       const a = byLine.get(walls[i][d].line);
       a ? a.push(i) : byLine.set(walls[i][d].line, [i]);
     }
-    for (const list of byLine.values()) {
-      list.sort((p, q) =>
-        (walls[q][d].hi - walls[q][d].lo) - (walls[p][d].hi - walls[p][d].lo) || p - q);
-    }
     return byLine;
+  });
+
+  // critical walls: the earliest wall covering some exposed outline cell.
+  // They define the silhouette there and stay exactly on the grid line
+  // whenever paint order allows it (no ordered conflict with an earlier
+  // wall); corner-tip collisions dodge around them instead of moving them.
+  const critical = rects.map(() => [false, false, false, false]);
+  dirs.forEach((_, d) => {
+    for (const list of groups[d].values()) {
+      const covered = new Set();
+      for (const i of list) {
+        const wl = walls[i][d];
+        for (let t = wl.lo; t < wl.hi; t++) {
+          if (!covered.has(t) && !occAcross(wl.ax, wl.beyond, t)) {
+            critical[i][d] = true;
+            break;
+          }
+        }
+        for (let t = wl.lo; t < wl.hi; t++) covered.add(t);
+      }
+    }
   });
 
   // Iterative slot assignment. A side's outset extends the box's
@@ -131,7 +160,12 @@ export function spriteToBoxes(texture, opts = {}) {
   const slots = rects.map(() => [0, 0, 0, 0]);
   const perp = (d) => (d < 2 ? [2, 3] : [0, 1]); // span ends -> side indices
   const extOf = (i, d, e) => Math.min(slots[i][perp(d)[e]] * step, px * 0.25);
-  const wallConflicts = new Set(); // "d:line:i:j" with i, j in group order
+  // ordered conflicts (the grid spans themselves overlap on exposed cells):
+  // the later-painted wall must sit STRICTLY outside the earlier one.
+  // Unordered conflicts (overlap only via the 1 mm corner tips the outsets
+  // create): the walls merely need distinct slots, so critical walls can
+  // keep the outline.
+  const ordered = new Set(), unordered = new Set(); // "d:line:lo:hi" pair keys
   for (let round = 0; round < 8; round++) {
     let grew = false;
     dirs.forEach((_, d) => {
@@ -140,7 +174,8 @@ export function spriteToBoxes(texture, opts = {}) {
           for (let v = u + 1; v < list.length; v++) {
             const i = list[u], j = list[v];
             const key = `${d}:${line}:${i}:${j}`;
-            if (wallConflicts.has(key) || rects[i].color === rects[j].color) continue;
+            if (ordered.has(key) || unordered.has(key)) continue;
+            if (rects[i].color === rects[j].color) continue;
             const A = walls[i][d], B = walls[j][d];
             const aLo = A.lo * px - extOf(i, d, 0), aHi = A.hi * px + extOf(i, d, 1);
             const bLo = B.lo * px - extOf(j, d, 0), bHi = B.hi * px + extOf(j, d, 1);
@@ -154,26 +189,54 @@ export function spriteToBoxes(texture, opts = {}) {
               if (!occBeyond(A, t)) { exposed = true; break; }
             }
             if (!exposed) continue;
-            wallConflicts.add(key);
+            // grid-level exposed overlap => ordered (paint semantics)
+            const gLo = Math.max(A.lo, B.lo), gHi = Math.min(A.hi, B.hi);
+            let gridExposed = false;
+            for (let t = gLo; t < gHi; t++) {
+              if (!occBeyond(A, t)) { gridExposed = true; break; }
+            }
+            (gridExposed ? ordered : unordered).add(key);
             grew = true;
           }
         }
       }
     });
     if (!grew) break;
-    // reassign every slot from the accumulated conflict set
+    // reassign every slot: ordered partners force strictly larger slots on
+    // the later wall (paint semantics — the rim always shows the topmost
+    // color); critical walls with no ordered-earlier partner pin the exact
+    // outline; unordered (corner-tip) partners just need distinct slots
+    // and get dodged, never moving a pinned wall
     dirs.forEach((_, d) => {
       for (const [line, list] of groups[d]) {
-        for (let u = 0; u < list.length; u++) {
-          const taken = new Set();
+        // pinned = critical and free of ordered conflicts with earlier
+        // walls (ordered pairs are grid-based, so this is stable)
+        const pinned = list.map((i, u) => {
+          if (!critical[i][d]) return false;
           for (let v = 0; v < u; v++) {
-            const key = `${d}:${line}:${list[u]}:${list[v]}`;
-            const key2 = `${d}:${line}:${list[v]}:${list[u]}`;
-            if (wallConflicts.has(key) || wallConflicts.has(key2)) taken.add(slots[list[v]][d]);
+            if (ordered.has(`${d}:${line}:${list[v]}:${i}`)) return false;
           }
+          return true;
+        });
+        for (let u = 0; u < list.length; u++) {
+          const i = list[u];
+          if (pinned[u]) { slots[i][d] = 0; continue; }
           let s = 0;
-          while (taken.has(s)) s++;
-          slots[list[u]][d] = s;
+          const avoid = new Set();
+          for (let v = 0; v < list.length; v++) {
+            if (v === u) continue;
+            const key = v < u ? `${d}:${line}:${list[v]}:${i}` : `${d}:${line}:${i}:${list[v]}`;
+            if (ordered.has(key)) {
+              if (v < u) s = Math.max(s, slots[list[v]][d] + 1);
+              // later ordered partners position themselves above us
+            } else if (unordered.has(key)) {
+              // earlier-assigned partners hold their slot; pinned walls
+              // are 0 regardless of assignment order
+              if (v < u || pinned[v]) avoid.add(pinned[v] ? 0 : slots[list[v]][d]);
+            }
+          }
+          while (avoid.has(s)) s++;
+          slots[i][d] = s;
         }
       }
     });
