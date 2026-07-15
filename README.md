@@ -100,8 +100,11 @@ published 7.7/3.704 are roundings that leave ~1 mm/m gaps — thin X axis,
 right-angle corner at the origin) with a position, per-axis scale, and Euler
 rotation:
 
-1. **Extract** mesh geometry (world-transformed, triangulated). Animations,
-   skeletons, cameras, and lights are ignored.
+1. **Extract** mesh geometry (world-transformed, triangulated). The model's
+   CURRENT pose is baked in: skinned meshes are CPU-skinned with the
+   imported skeleton pose and active morph target influences are applied,
+   so the output matches the viewport exactly rather than resetting to the
+   bind/rest pose. Animations, cameras, and lights are ignored.
 2. **Color** each triangle from the material base color and base color
    texture. By default, triangles spanning multiple texture colors are
    recursively subdivided (4-way midpoint, up to the configured depth)
