@@ -70,6 +70,8 @@ export default {
   "tip.param.tol": "Écart maximal entre deux couleurs (distance RVB, 0–441) pour être traitées comme identiques lors des fusions et de la subdivision — plus haut = moins de primitives, couleurs plus plates",
   "param.subdiv": "Profondeur de subdivision",
   "tip.param.subdiv": "Nombre de fois qu'un triangle peut être divisé (en 4 par niveau) pour capturer le détail de texture — plus haut capture des motifs plus fins mais multiplie les primitives",
+  "param.smartedge": "Détection intelligente des bords (expérimental)",
+  "tip.param.smartedge": "Trace les frontières de couleur de la texture et découpe le long de lignes lisses et globalement cohérentes au lieu d'une division récursive — courbes plus propres et moins de primitives, surtout sur les textures organiques",
   "param.snap": "Accrochage à angle droit (°)",
   "tip.param.snap": "Les triangles dont le plus grand angle est à moins de ces degrés de 90° sont traités comme rectangles et ne nécessitent qu'une primitive au lieu de deux (déforme légèrement leur forme)",
   "param.merge": "Fusionner les faces coplanaires",
@@ -111,8 +113,6 @@ export default {
 
   "tip.tx.select": "Quelle texture du modèle éditer",
   "tip.tx.canvas": "Aperçu de la texture",
-  "tx.colors": "Réduction des couleurs",
-  "tip.tx.colors": "Fusionne les couleurs proches en moins de couleurs représentatives (pondérées par fréquence) — des valeurs élevées réduisent fortement la palette tout en préservant l'aspect général. 0 = désactivé",
   "tx.hue": "Décalage de teinte",
   "tip.tx.hue": "Fait tourner toutes les teintes sur le cercle chromatique",
   "tx.sat": "Saturation",

@@ -70,6 +70,8 @@ export default {
   "tip.param.tol": "Yüzeyleri birleştirirken ve doku bölünmesine karar verirken iki rengin ne kadar farklı olup yine de aynı sayılacağı (RGB uzaklığı, 0–441) — yükseldikçe daha az şekil, daha düz renkler",
   "param.subdiv": "Doku bölme derinliği",
   "tip.param.subdiv": "Doku ayrıntısını yakalamak için bir üçgenin kaç kez bölünebileceği (her seviyede 4'e) — yükseldikçe ince desenleri yakalar ama şekil sayısını katlar",
+  "param.smartedge": "Akıllı kenar algılama (deneysel)",
+  "tip.param.smartedge": "Dokunun renk sınırlarını izler ve özyinelemeli bölme yerine pürüzsüz, genel olarak tutarlı çizgiler boyunca keser — özellikle organik dokularda daha temiz eğriler ve daha az şekil",
   "param.snap": "Dik açı yaslama (°)",
   "tip.param.snap": "En büyük açısı 90°'den bu kadar derece içinde olan üçgenler dik üçgen sayılır ve iki yerine tek şekil gerektirir (biçimi hafifçe bozar)",
   "param.merge": "Eş düzlemli yüzeyleri birleştir",
@@ -111,8 +113,6 @@ export default {
 
   "tip.tx.select": "Modelin hangi dokusunun düzenleneceği",
   "tip.tx.canvas": "Doku önizlemesi",
-  "tx.colors": "Renk azaltma",
-  "tip.tx.colors": "Benzer renkleri daha az temsilci renkte birleştirir (görülme sıklığına göre ağırlıklı) — yüksek değerler genel görünümü koruyarak paleti ciddi biçimde küçültür. 0 = kapalı",
   "tx.hue": "Ton kaydırma",
   "tip.tx.hue": "Tüm tonları renk çemberinde döndürür",
   "tx.sat": "Doygunluk",

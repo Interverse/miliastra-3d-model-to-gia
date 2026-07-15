@@ -101,7 +101,7 @@ export function mergeCoplanarTriangles(tris, opts = {}) {
       continue;
     }
     const merged = retriangulateRegion(regionTris, tris, ids, verts, normals);
-    if (merged) out.push(...merged);
+    if (merged) for (const m of merged) out.push(m);
     else for (const t of regionTris) out.push(tris[t]);
   }
   return out;

@@ -20,6 +20,7 @@
 import { v3, sub, add, mul, dot, cross, len, norm, matToEulerYXZ, matToEulerXYZ, eulerYXZToMat, matMulVec, DEG, RAD } from './vec3.js';
 import { decomposeTriangle, placementFromRightTriangle, triangleArea, DEFAULT_CANONICAL } from './right-triangles.js';
 import { sampleTriangleColor, colorDistance, colorToRgbInt } from './color.js';
+import { buildRegionMap, segmentTriangle } from './color-regions.js';
 import { mergeCoplanarTriangles } from './mesh-ops.js';
 import { pairIntoSquares, squarePlacement } from './squares.js';
 import { coalesceSquares } from './coalesce.js';
@@ -38,6 +39,7 @@ export const DEFAULT_PARAMS = {
   colorTolerance: 30,    // 0..441 RGB euclidean; merge threshold
   maxSubdiv: 3,          // max texture-driven subdivision depth (4^d growth)
   subdivideThreshold: null, // color spread that triggers subdivision (default: colorTolerance)
+  smartEdges: false,     // experimental region-based edge detection (Direct mode)
   merge: true,           // coplanar same-color merge pass
   planarAngleDeg: 1,     // coplanarity tolerance for merging
   weldEps: 1e-4,         // vertex weld distance (meters)
@@ -106,10 +108,34 @@ function* iterateTriangles(mesh) {
   }
 }
 
-// ---------- step 2: texture-driven subdivision + alpha skipping ----------
+// ---------- step 2: color-aware subdivision + alpha skipping ----------
+//
+// Default: spread-driven recursive 4-way midpoint subdivision (classic).
+//
+// params.smartEdges (experimental, Direct mode): region-based segmentation
+// (engine/convert/color-regions.js) — the texture is segmented ONCE into
+// simplified color regions and each triangle is split along globally
+// consistent fitted boundary polylines. Straight boundaries cost a handful
+// of well-shaped polygons instead of 4^depth midpoint fragments; curves
+// reconstruct as smooth secant polylines.
 
 function subdivideForColor(tri, mesh, params, depth, out, budget, stats) {
   const base = mesh.color ?? [255, 255, 255];
+
+  if (params.smartEdges && mesh.texture && tri.uv) {
+    const tolerance = Math.max(1, params.subdivideThreshold ?? params.colorTolerance);
+    const alphaCutoff = Math.max(0.004, params.alphaCutoff);
+    const map = buildRegionMap(mesh.texture, tolerance, alphaCutoff);
+    segmentTriangle(tri, mesh.texture, map, {
+      base,
+      budget,
+      minArea: params.minTriangleArea,
+      maxSubdiv: params.maxSubdiv,
+      tolerance,
+    }, out, stats);
+    return;
+  }
+
   const { color, spread, alphaMax } = sampleTriangleColor(
     mesh.texture, tri.uv?.[0], tri.uv?.[1], tri.uv?.[2], base);
   const threshold = params.subdivideThreshold ?? params.colorTolerance;
@@ -238,6 +264,13 @@ function round6(v) {
   return Object.is(r, -0) ? 0 : r;
 }
 
+// push(...src) overflows the call stack for large arrays (every element
+// becomes a call argument) — always append big arrays with a loop
+function pushAll(dst, src) {
+  for (let i = 0; i < src.length; i++) dst.push(src[i]);
+  return dst;
+}
+
 // ---------- main entry ----------
 
 // input: meshes array, { meshes }, or { sprite: { texture, pixelSize, thickness } }
@@ -347,7 +380,7 @@ export function convert(input, userParams = {}) {
       stats.voxels = res.voxels;
       stats.sdfCells = res.cells;
       stats.voxelSize = Math.round(vs * 1e4) / 1e4;
-      colored.push(...res.tris);
+      pushAll(colored, res.tris);
       stats.afterSubdivision = colored.length;
       skipColoring = true;
     } else {
@@ -428,7 +461,7 @@ export function convert(input, userParams = {}) {
       weldEps: params.weldEps,
       planarAngleDeg: params.planarAngleDeg,
     });
-    placements.push(...p0.squares);
+    pushAll(placements, p0.squares);
     for (const t of p0.rest) {
       for (const pl of decomposeTriangle(t.p[0], t.p[1], t.p[2], { snapDeg: params.snapDeg, canonical: canonicalPx })) {
         pl.color = t.color;
@@ -497,7 +530,7 @@ export function convert(input, userParams = {}) {
     // pass 2: merge the unpaired remainder, then pair again
     const mergedRest = doMerge(p0.rest);
     const p1 = pairIntoSquares(mergedRest, pairOpts);
-    squares.push(...p1.squares);
+    pushAll(squares, p1.squares);
     // pass 3: decompose whatever is left into right triangles and pair once
     // more — decomposition often recreates the two halves of a quad
     const rightTris = [];
@@ -511,7 +544,7 @@ export function convert(input, userParams = {}) {
       }
     }
     const p2 = pairIntoSquares(rightTris, pairOpts);
-    squares.push(...p2.squares);
+    pushAll(squares, p2.squares);
     leftovers = p2.rest;
     // pass 4: greedy-coalesce equal-size aligned squares into maximal
     // rectangles (voxel/texel grids collapse dramatically)

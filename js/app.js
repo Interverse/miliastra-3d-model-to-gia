@@ -852,9 +852,7 @@ export function initApp({ mode = "gia" } = {}) {
         texList.push({ texture: m.texture });
       }
     }
-    // color reduction is pointless for 3D models (it doesn't reduce the
-    // decoration count), so hide that slider for model textures
-    texPanel.setTextures(texList, { colorReduction: false });
+    texPanel.setTextures(texList);
     updateDecimPreview();
     editor.refresh(); // model gizmo tools become available
   }
@@ -990,6 +988,7 @@ export function initApp({ mode = "gia" } = {}) {
       unitScale: parseFloat(paramInputs.unitScale.value) || 1,
       colorTolerance: parseFloat(paramInputs.colorTolerance.value),
       maxSubdiv: parseInt(paramInputs.maxSubdiv.value, 10),
+      smartEdges: $("p-mode").value === "direct" && ($("p-smartedge")?.checked ?? false),
       snapDeg: parseFloat(paramInputs.snapDeg.value),
       maxDecorations: Math.max(
         1,

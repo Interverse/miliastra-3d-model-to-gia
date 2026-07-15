@@ -1,11 +1,11 @@
-// Texture editing panel: K-means color reduction and recoloring
-// adjustments. Edits are written back into the extracted engine textures
-// ({width, height, data} buffers) IN PLACE, so the conversion pipeline and
-// preview overlay pick them up on the next Generate.
+// Texture editing panel: recoloring adjustments. Edits are written back
+// into the extracted engine textures ({width, height, data} buffers) IN
+// PLACE, so the conversion pipeline and preview overlay pick them up on
+// the next Generate.
 //
 // Non-destructive model: original pixels are kept; the working image is
-// recomputed as  adjust(original) -> quantize  whenever a control changes,
-// so sliders never accumulate loss.
+// recomputed as adjust(original) whenever a control changes, so sliders
+// never accumulate loss.
 //
 // Settings are PER TEXTURE: each texture keeps its own configuration, and
 // selecting a different texture restores that texture's settings. With
@@ -15,7 +15,6 @@
 import { t } from "./i18n.js";
 
 const DEFAULT_SETTINGS = () => ({
-  colors: 0,
   hue: 0,
   sat: 100,
   bri: 0,
@@ -69,8 +68,6 @@ export function setupTexturePanel(getEl, onTextureChange) {
       out[i * 4 + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
       out[i * 4 + 3] = original[i * 4 + 3];
     }
-
-    if (settings.colors > 0) kmeansQuantize(out, n, settings.colors);
   }
 
   function rebuildActive() {
@@ -78,117 +75,6 @@ export function setupTexturePanel(getEl, onTextureChange) {
     applyPipeline(active);
     drawPreview();
     if (onTextureChange) onTextureChange(active.texture);
-  }
-
-  // ---------- K-means color quantization ----------
-
-  // Weighted K-means in CIELAB with k-means++ seeding, run on the 5-bit
-  // color histogram (≤ 32k items) rather than raw pixels. Strength 0..100
-  // maps to the cluster count K (mild → ~48 colors, max → 2). Deterministic
-  // (seeded PRNG), so the same texture + settings always produce the same
-  // palette. Every pixel then snaps to its cluster's weighted-mean color.
-  function kmeansQuantize(data, n, strength) {
-    const K = Math.max(2, Math.round(2 + 46 * Math.pow(1 - strength / 100, 1.7)));
-
-    // weighted histogram (5-bit buckets)
-    const counts = new Map();
-    for (let i = 0; i < n; i++) {
-      if (data[i * 4 + 3] < 8) continue;
-      const key = ((data[i * 4] >> 3) << 10) | ((data[i * 4 + 1] >> 3) << 5) | (data[i * 4 + 2] >> 3);
-      const c = counts.get(key);
-      if (c) {
-        c.w++;
-        c.r += data[i * 4]; c.g += data[i * 4 + 1]; c.b += data[i * 4 + 2];
-      } else {
-        counts.set(key, { w: 1, r: data[i * 4], g: data[i * 4 + 1], b: data[i * 4 + 2] });
-      }
-    }
-    if (counts.size <= K) return; // already at or below the target
-
-    const items = [];
-    for (const [key, c] of counts) {
-      const rgb = [c.r / c.w, c.g / c.w, c.b / c.w];
-      items.push({ key, rgb, lab: rgbToLab(rgb), w: c.w });
-    }
-
-    // k-means++ seeding (weighted, deterministic)
-    const rand = mulberry32(0x9e3779b9);
-    const centroids = [];
-    {
-      // first: the heaviest color (dominant background/skin tone)
-      let hi = 0;
-      for (let i = 1; i < items.length; i++) if (items[i].w > items[hi].w) hi = i;
-      centroids.push(items[hi].lab.slice());
-      const d2 = new Float64Array(items.length).fill(Infinity);
-      while (centroids.length < K) {
-        const c = centroids[centroids.length - 1];
-        let sum = 0;
-        for (let i = 0; i < items.length; i++) {
-          const d = labDist2(items[i].lab, c);
-          if (d < d2[i]) d2[i] = d;
-          sum += d2[i] * items[i].w;
-        }
-        if (sum <= 0) break;
-        let r = rand() * sum;
-        let pick = items.length - 1;
-        for (let i = 0; i < items.length; i++) {
-          r -= d2[i] * items[i].w;
-          if (r <= 0) { pick = i; break; }
-        }
-        centroids.push(items[pick].lab.slice());
-      }
-    }
-
-    // Lloyd iterations (assign -> weighted mean), until stable or 16 rounds
-    const assign = new Int32Array(items.length);
-    for (let iter = 0; iter < 16; iter++) {
-      let moved = 0;
-      for (let i = 0; i < items.length; i++) {
-        let best = 0, bestD = Infinity;
-        for (let k = 0; k < centroids.length; k++) {
-          const d = labDist2(items[i].lab, centroids[k]);
-          if (d < bestD) { bestD = d; best = k; }
-        }
-        if (assign[i] !== best) { assign[i] = best; moved++; }
-      }
-      // recompute centroids as weighted means (in Lab)
-      const acc = centroids.map(() => [0, 0, 0, 0]);
-      for (let i = 0; i < items.length; i++) {
-        const a = acc[assign[i]], it = items[i];
-        a[0] += it.lab[0] * it.w; a[1] += it.lab[1] * it.w; a[2] += it.lab[2] * it.w;
-        a[3] += it.w;
-      }
-      for (let k = 0; k < centroids.length; k++) {
-        if (acc[k][3] > 0) {
-          centroids[k][0] = acc[k][0] / acc[k][3];
-          centroids[k][1] = acc[k][1] / acc[k][3];
-          centroids[k][2] = acc[k][2] / acc[k][3];
-        }
-      }
-      if (moved === 0) break;
-    }
-
-    // cluster palette = weighted mean RGB of its members (display-accurate)
-    const pal = centroids.map(() => [0, 0, 0, 0]);
-    for (let i = 0; i < items.length; i++) {
-      const p = pal[assign[i]], it = items[i];
-      p[0] += it.rgb[0] * it.w; p[1] += it.rgb[1] * it.w; p[2] += it.rgb[2] * it.w;
-      p[3] += it.w;
-    }
-    const palette = pal.map((p, k) =>
-      p[3] > 0
-        ? [Math.round(p[0] / p[3]), Math.round(p[1] / p[3]), Math.round(p[2] / p[3])]
-        : [0, 0, 0]);
-
-    // bucket -> palette index, then write every pixel
-    const bucketPal = new Map();
-    for (let i = 0; i < items.length; i++) bucketPal.set(items[i].key, palette[assign[i]]);
-    for (let i = 0; i < n; i++) {
-      if (data[i * 4 + 3] < 8) continue;
-      const key = ((data[i * 4] >> 3) << 10) | ((data[i * 4 + 1] >> 3) << 5) | (data[i * 4 + 2] >> 3);
-      const p = bucketPal.get(key);
-      if (p) { data[i * 4] = p[0]; data[i * 4 + 1] = p[1]; data[i * 4 + 2] = p[2]; }
-    }
   }
 
   function drawPreview() {
@@ -207,14 +93,12 @@ export function setupTexturePanel(getEl, onTextureChange) {
   // ---------- controls <-> settings ----------
 
   const labelFmt = {
-    "tx-colors": ["v-txcolors", (v) => (String(v) === "0" ? t("val.off") : String(v))],
     "tx-hue": ["v-txhue", (v) => v + "°"],
     "tx-sat": ["v-txsat", (v) => v + "%"],
     "tx-bri": ["v-txbri", (v) => String(v)],
     "tx-con": ["v-txcon", (v) => String(v)],
   };
   const FIELDS = [
-    ["tx-colors", "colors"],
     ["tx-hue", "hue"],
     ["tx-sat", "sat"],
     ["tx-bri", "bri"],
@@ -279,11 +163,7 @@ export function setupTexturePanel(getEl, onTextureChange) {
 
   return {
     // textures: [{ texture: {width,height,data,...}, name }]
-    // opts.colorReduction: show the Color Reduction slider (default true).
-    // 3D model imports pass false — reducing a model texture's palette
-    // doesn't lower the decoration count, so the slider is hidden there.
-    setTextures(list, opts = {}) {
-      $("row-tx-colors").hidden = opts.colorReduction === false;
+    setTextures(list) {
       entries = list.map((e, i) => ({
         texture: e.texture,
         name: e.name ?? t("tx.item", { n: i + 1 }),
@@ -312,36 +192,6 @@ export function setupTexturePanel(getEl, onTextureChange) {
 }
 
 // ---------- color helpers ----------
-
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let z = Math.imul(a ^ (a >>> 15), 1 | a);
-    z = (z + Math.imul(z ^ (z >>> 7), 61 | z)) ^ z;
-    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// sRGB [0..255] -> CIELAB (D65)
-function rgbToLab(rgb) {
-  const f = (u) => {
-    u /= 255;
-    return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
-  };
-  const r = f(rgb[0]), g = f(rgb[1]), b = f(rgb[2]);
-  let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
-  let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
-  const g3 = (t3) => (t3 > 0.008856 ? Math.cbrt(t3) : 7.787 * t3 + 16 / 116);
-  x = g3(x); y = g3(y); z = g3(z);
-  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
-}
-
-function labDist2(a, b) {
-  const d0 = a[0] - b[0], d1 = a[1] - b[1], d2 = a[2] - b[2];
-  return d0 * d0 + d1 * d1 + d2 * d2;
-}
 
 function rgbToHsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;

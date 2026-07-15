@@ -70,6 +70,8 @@ export default {
   "tip.param.tol": "Quanto due colori possono differire (distanza RGB, 0–441) restando trattati come uguali nella fusione delle facce e nella suddivisione — più alto = meno primitive, colori più piatti",
   "param.subdiv": "Profondità suddivisione texture",
   "tip.param.subdiv": "Quante volte un triangolo può essere diviso (in 4 per livello) per catturare i dettagli della texture — più alto cattura motivi più fini ma moltiplica le primitive",
+  "param.smartedge": "Rilevamento intelligente dei bordi (sperimentale)",
+  "tip.param.smartedge": "Traccia i confini di colore della texture e taglia lungo linee lisce e globalmente coerenti invece della suddivisione ricorsiva — curve più pulite e meno primitive, soprattutto su texture organiche",
   "param.snap": "Aggancio angolo retto (°)",
   "tip.param.snap": "I triangoli il cui angolo maggiore dista da 90° entro questi gradi sono trattati come rettangoli e richiedono una primitiva anziché due (deforma leggermente la forma)",
   "param.merge": "Fondi facce complanari",
@@ -111,8 +113,6 @@ export default {
 
   "tip.tx.select": "Quale texture del modello modificare",
   "tip.tx.canvas": "Anteprima texture",
-  "tx.colors": "Riduzione colori",
-  "tip.tx.colors": "Fonde colori simili in meno colori rappresentativi (pesati per frequenza) — valori alti riducono molto la palette conservando l'aspetto generale. 0 = disattivata",
   "tx.hue": "Slittamento tonalità",
   "tip.tx.hue": "Ruota tutte le tonalità sulla ruota dei colori",
   "tx.sat": "Saturazione",

@@ -70,6 +70,8 @@ export default {
   "tip.param.tol": "Wie stark sich zwei Farben unterscheiden dürfen (RGB-Distanz, 0–441) und dennoch als gleich gelten beim Zusammenführen und bei der Unterteilung — höher = weniger Primitive, flachere Farben",
   "param.subdiv": "Textur-Unterteilungstiefe",
   "tip.param.subdiv": "Wie oft ein Dreieck geteilt werden darf (je Stufe in 4), um Texturdetails einzufangen — höher erfasst feinere Muster, vervielfacht aber die Primitive",
+  "param.smartedge": "Intelligente Kantenerkennung (experimentell)",
+  "tip.param.smartedge": "Verfolgt die Farbgrenzen der Textur und schneidet entlang glatter, global konsistenter Linien statt rekursivem Teilen — sauberere Kurven und weniger Primitive, besonders bei organischen Texturen",
   "param.snap": "Rechtwinkel-Einrasten (°)",
   "tip.param.snap": "Dreiecke, deren größter Winkel höchstens so viele Grad von 90° abweicht, gelten als rechtwinklig und brauchen nur ein Primitiv statt zwei (verzerrt die Form leicht)",
   "param.merge": "Koplanare Flächen zusammenführen",
@@ -111,8 +113,6 @@ export default {
 
   "tip.tx.select": "Welche Textur des Modells bearbeitet wird",
   "tip.tx.canvas": "Texturvorschau",
-  "tx.colors": "Farbreduktion",
-  "tip.tx.colors": "Führt ähnliche Farben zu weniger repräsentativen Farben zusammen (nach Häufigkeit gewichtet) — höhere Werte verkleinern die Palette deutlich bei erhaltenem Gesamteindruck. 0 = aus",
   "tx.hue": "Farbtonverschiebung",
   "tip.tx.hue": "Dreht alle Farbtöne auf dem Farbkreis",
   "tx.sat": "Sättigung",

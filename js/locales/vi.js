@@ -70,6 +70,8 @@ export default {
   "tip.param.tol": "Hai màu được phép khác nhau bao nhiêu (khoảng cách RGB, 0–441) mà vẫn coi là một màu khi gộp mặt và quyết định chia nhỏ kết cấu — cao hơn = ít khối hơn, màu phẳng hơn",
   "param.subdiv": "Độ sâu chia nhỏ kết cấu",
   "tip.param.subdiv": "Một tam giác được chia bao nhiêu lần (mỗi cấp thành 4) để bắt chi tiết kết cấu — cao hơn bắt hoa văn mịn hơn nhưng nhân số khối lên",
+  "param.smartedge": "Nhận diện cạnh thông minh (thử nghiệm)",
+  "tip.param.smartedge": "Dò ranh giới màu của kết cấu và cắt theo các đường mượt, nhất quán toàn cục thay vì chia đệ quy — đường cong sạch hơn và ít khối hơn, nhất là với kết cấu hữu cơ",
   "param.snap": "Bắt góc vuông (°)",
   "tip.param.snap": "Tam giác có góc lớn nhất cách 90° trong khoảng này được coi là tam giác vuông và chỉ cần một khối thay vì hai (làm méo nhẹ hình dạng)",
   "param.merge": "Gộp mặt đồng phẳng",
@@ -111,8 +113,6 @@ export default {
 
   "tip.tx.select": "Chọn kết cấu nào của mô hình để chỉnh sửa",
   "tip.tx.canvas": "Xem trước kết cấu",
-  "tx.colors": "Giảm số màu",
-  "tip.tx.colors": "Gộp các màu tương tự thành ít màu đại diện hơn (theo tần suất xuất hiện) — giá trị cao giảm mạnh bảng màu mà vẫn giữ vẻ ngoài tổng thể. 0 = tắt",
   "tx.hue": "Dịch sắc độ",
   "tip.tx.hue": "Xoay mọi sắc độ quanh vòng tròn màu",
   "tx.sat": "Bão hòa",

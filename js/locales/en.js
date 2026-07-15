@@ -71,6 +71,8 @@ export default {
   "tip.param.tol": "How different two colors may be (RGB distance, 0–441) while still being treated as the same color when merging faces and deciding texture subdivision — higher = fewer primitives, flatter colors",
   "param.subdiv": "Texture subdivision depth",
   "tip.param.subdiv": "How many times a triangle may be split (into 4 each level) to capture texture detail — higher captures finer texture patterns but multiplies primitive count",
+  "param.smartedge": "Smart edge detection (experimental)",
+  "tip.param.smartedge": "Traces the texture's color boundaries and cuts along smooth, globally consistent lines instead of recursive splitting — cleaner curves and fewer primitives, especially on organic textures",
   "param.snap": "Right-angle snap (°)",
   "tip.param.snap": "Triangles whose largest angle is within this many degrees of 90° are treated as right triangles and need only one primitive instead of two (slightly distorts their shape)",
   "param.merge": "Merge coplanar faces",
@@ -112,8 +114,6 @@ export default {
 
   "tip.tx.select": "Which of the model's textures to edit",
   "tip.tx.canvas": "Texture preview",
-  "tx.colors": "Color reduction",
-  "tip.tx.colors": "Merges similar colors into fewer representative colors (weighted by how often they appear) — higher values significantly reduce the palette while preserving the overall appearance. 0 = off",
   "tx.hue": "Hue shift",
   "tip.tx.hue": "Rotates all hues around the color wheel",
   "tx.sat": "Saturation",

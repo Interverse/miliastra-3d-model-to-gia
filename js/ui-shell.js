@@ -140,6 +140,10 @@ export function renderShell(root, {
           <span><span data-i18n="param.subdiv"></span> <em id="v-subdiv">3</em></span>
           <input type="range" id="p-subdiv" min="0" max="5" value="3" step="1">
         </label>
+        <label class="row" data-i18n-title="tip.param.smartedge">
+          <span data-i18n="param.smartedge"></span>
+          <input type="checkbox" id="p-smartedge">
+        </label>
         <label class="row" data-i18n-title="tip.param.snap">
           <span><span data-i18n="param.snap"></span> <em id="v-snap">1</em></span>
           <input type="range" id="p-snap" min="0" max="15" value="1" step="0.5">
@@ -224,10 +228,6 @@ export function renderShell(root, {
       <summary data-i18n="panel.texture"></summary>
       <select id="tx-select" hidden data-i18n-title="tip.tx.select"></select>
       <canvas id="tx-canvas" data-i18n-title="tip.tx.canvas"></canvas>
-      <label class="row" id="row-tx-colors" data-i18n-title="tip.tx.colors">
-        <span><span data-i18n="tx.colors"></span> <em id="v-txcolors"></em></span>
-        <input type="range" id="tx-colors" min="0" max="100" value="0" step="1">
-      </label>
       <label class="row" data-i18n-title="tip.tx.hue">
         <span><span data-i18n="tx.hue"></span> <em id="v-txhue">0</em></span>
         <input type="range" id="tx-hue" min="-180" max="180" value="0" step="5">
@@ -520,8 +520,6 @@ export function renderShell(root, {
   // dynamic bits that applyI18n cannot know the state of
   const vdec = root.querySelector("#v-decimate");
   if (vdec) vdec.textContent = t("val.off");
-  const vtx = root.querySelector("#v-txcolors");
-  if (vtx) vtx.textContent = t("val.off");
   const selinfo = root.querySelector("#ed-selinfo");
   if (selinfo) selinfo.textContent = t("sel.none");
 

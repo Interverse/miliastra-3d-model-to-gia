@@ -68,7 +68,7 @@ export function coalesceSquares(squares, opts = {}) {
       if (cellMap.has(k)) { ok = false; break; } // overlapping — bail out
       cellMap.set(k, { ai, bi, sq: c.sq });
     }
-    if (!ok) { out.push(...g.items); continue; }
+    if (!ok) { for (const it of g.items) out.push(it); continue; }
 
     // greedy meshing over occupied cells
     const cells = new Set(cellMap.keys());

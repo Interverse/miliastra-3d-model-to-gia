@@ -70,6 +70,8 @@ export default {
   "tip.param.tol": "Seberapa berbeda dua warna boleh (jarak RGB, 0–441) namun tetap dianggap sama saat menggabungkan permukaan dan menentukan pembagian tekstur — makin tinggi = makin sedikit primitif, warna makin datar",
   "param.subdiv": "Kedalaman pembagian tekstur",
   "tip.param.subdiv": "Berapa kali segitiga boleh dibagi (menjadi 4 tiap level) untuk menangkap detail tekstur — makin tinggi menangkap pola lebih halus tetapi melipatgandakan primitif",
+  "param.smartedge": "Deteksi tepi cerdas (eksperimental)",
+  "tip.param.smartedge": "Menelusuri batas warna tekstur dan memotong di sepanjang garis halus yang konsisten secara global alih-alih pembagian rekursif — kurva lebih bersih dan primitif lebih sedikit, terutama pada tekstur organik",
   "param.snap": "Jepret sudut siku (°)",
   "tip.param.snap": "Segitiga yang sudut terbesarnya berjarak segini derajat dari 90° diperlakukan sebagai segitiga siku dan hanya butuh satu primitif alih-alih dua (sedikit mendistorsi bentuknya)",
   "param.merge": "Gabungkan permukaan sebidang",
@@ -111,8 +113,6 @@ export default {
 
   "tip.tx.select": "Tekstur model mana yang diedit",
   "tip.tx.canvas": "Pratinjau tekstur",
-  "tx.colors": "Reduksi warna",
-  "tip.tx.colors": "Menggabungkan warna serupa menjadi lebih sedikit warna wakil (dibobot frekuensi) — nilai tinggi memangkas palet drastis sambil menjaga tampilan keseluruhan. 0 = mati",
   "tx.hue": "Geser rona",
   "tip.tx.hue": "Memutar semua rona pada roda warna",
   "tx.sat": "Saturasi",

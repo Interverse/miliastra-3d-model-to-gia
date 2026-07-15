@@ -497,13 +497,15 @@ function assembleUnderpaintSolution(grid, accepted) {
   const rects = [];
   for (const c of accepted)
     rects.push({ x: c.bbox.x0, y: c.bbox.y0, w: c.bbox.x1 - c.bbox.x0, h: c.bbox.y1 - c.bbox.y0, color: c.color });
-  for (const c of accepted) rects.push(...offsetRects(c.corrections, c.bbox.x0, c.bbox.y0));
+  for (const c of accepted) {
+    for (const r of offsetRects(c.corrections, c.bbox.x0, c.bbox.y0)) rects.push(r);
+  }
 
   const residual = makeGrid(grid.width, grid.height);
   for (let y = 0; y < grid.height; y++)
     for (let x = 0; x < grid.width; x++)
       if (!occupied[y][x]) residual.rows[y][x] = grid.rows[y][x];
-  rects.push(...greedyMeshingRects(residual).rects);
+  for (const r of greedyMeshingRects(residual).rects) rects.push(r);
   return { rects, width: grid.width, height: grid.height };
 }
 

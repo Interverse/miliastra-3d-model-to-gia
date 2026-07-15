@@ -70,6 +70,8 @@ export default {
   "tip.param.tol": "Quanto duas cores podem diferir (distância RGB, 0–441) e ainda serem tratadas como iguais ao mesclar faces e decidir a subdivisão — maior = menos primitivas, cores mais chapadas",
   "param.subdiv": "Profundidade de subdivisão",
   "tip.param.subdiv": "Quantas vezes um triângulo pode ser dividido (em 4 por nível) para capturar detalhes da textura — maior captura padrões mais finos mas multiplica as primitivas",
+  "param.smartedge": "Detecção inteligente de bordas (experimental)",
+  "tip.param.smartedge": "Rastreia as bordas de cor da textura e corta ao longo de linhas suaves e globalmente consistentes em vez de divisão recursiva — curvas mais limpas e menos primitivas, sobretudo em texturas orgânicas",
   "param.snap": "Encaixe de ângulo reto (°)",
   "tip.param.snap": "Triângulos cujo maior ângulo está a até estes graus de 90° são tratados como retângulos e precisam de uma primitiva em vez de duas (distorce levemente a forma)",
   "param.merge": "Mesclar faces coplanares",
@@ -111,8 +113,6 @@ export default {
 
   "tip.tx.select": "Qual textura do modelo editar",
   "tip.tx.canvas": "Pré-visualização da textura",
-  "tx.colors": "Redução de cores",
-  "tip.tx.colors": "Funde cores parecidas em menos cores representativas (ponderadas pela frequência) — valores altos reduzem muito a paleta mantendo o aspecto geral. 0 = desligado",
   "tx.hue": "Deslocar matiz",
   "tip.tx.hue": "Gira todos os matizes na roda de cores",
   "tx.sat": "Saturação",

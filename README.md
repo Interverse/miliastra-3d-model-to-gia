@@ -103,9 +103,47 @@ rotation:
 1. **Extract** mesh geometry (world-transformed, triangulated). Animations,
    skeletons, cameras, and lights are ignored.
 2. **Color** each triangle from the material base color and base color
-   texture. Triangles spanning multiple texture colors are recursively
-   subdivided (configurable depth) until each piece is within the color
-   tolerance.
+   texture. By default, triangles spanning multiple texture colors are
+   recursively subdivided (4-way midpoint, up to the configured depth)
+   until each piece is within the color tolerance.
+
+   **Smart edge detection (experimental, Direct mode)** replaces the
+   recursive subdivision with region-based segmentation
+   (`engine/convert/color-regions.js`): the texture is segmented once into
+   simplified color regions (perceptual
+   clustering with Lloyd refinement, negligible-difference merging, and
+   insignificant-region absorption — dither and noise collapse into flat
+   regions while small high-contrast details survive), then each triangle is
+   split along fitted straight lines between regions (texel-axis cuts
+   preferred, guillotine slices for enclosed regions). A straight color
+   boundary costs a handful of well-shaped polygons instead of 4ⁿ recursive
+   midpoint fragments; midpoint subdivision remains only as a fallback for
+   genuinely non-linear boundaries (capped by the subdivision depth).
+   Cuts are guided by globally consistent boundary polylines: region
+   contours are traced on the label grid, simplified (Douglas–Peucker) and
+   least-squares refit, so a straight edge reconstructs as ONE exactly
+   straight line and a curve as one smooth polyline of balanced secants —
+   every piece in every triangle cuts along the same shared lines, so
+   boundaries can never zigzag from independently fitted chords. The curve
+   tolerance adapts to boundary contrast (faint edges take coarser secants;
+   sharp feature lines and silhouettes stay tight), anti-aliased organic
+   edges are recognized and collapsed to a single boundary (a thin region
+   whose color is the mix of its two neighbors is a soft-edge clustering
+   artifact, absorbed — while thin dark features like mouth and eye lines
+   are colorimetrically distinct and always kept), and every cut must keep
+   the majority of each color class on its own side within a bounded
+   absolute residue, so small details can never be sacrificed by a
+   "cheap" cut.
+   Refinement is perceptual-error driven: every straight cut tolerates a
+   bounded boundary displacement (~0.6 texel per texel of cut length, half
+   that on alpha edges), so smooth curves refine adaptively exactly where
+   curvature exceeds the bound — no stair-stepping — while low-detail
+   regions stay coarse; minorities count as significant only when their
+   excess area × contrast is visible, so isolated noise specks vanish but
+   small high-contrast details (eyes, outlines, thin stripes) are always
+   resolved. Leaf colors come from the shared region palette, so neighbors
+   merge and pair cleanly downstream. Colors are perceptually faithful
+   within the color tolerance rather than texel-exact.
 3. **Merge** adjacent coplanar triangles whose colors are within tolerance,
    re-triangulating the merged region with fewer triangles (removes grid
    tessellation on flat surfaces).
@@ -123,8 +161,9 @@ rotation:
 | Priority preset | Fidelity / Balanced / Minimal bundles of the below |
 | Primitives | Triangles / Both (see below) |
 | Decimation | Vertex-clustering simplification of the source mesh (UV-preserving) before conversion — for high-poly models. **Preview decimation** shows the simplified mesh in the viewport while adjusting |
-| Color tolerance | RGB distance treated as "same color" (merge + subdivision) |
-| Texture subdivision depth | Max recursion for texture detail (4ⁿ growth) |
+| Color tolerance | RGB distance treated as "same color" (merge + subdivision; with smart edges also region clustering) |
+| Texture subdivision depth | Max recursion for texture detail (4ⁿ growth); with smart edges it only caps the fallback splitting for non-linear boundaries |
+| Smart edge detection (experimental) | Region-based edge detection: traces color boundaries and cuts along smooth, globally consistent lines — cleaner curves and fewer primitives, especially on organic textures |
 | Right-angle snap | Near-right triangles become one decoration instead of two |
 | Max decorations | Hard cap; smallest triangles dropped first |
 | Merge coplanar faces | Toggle the reduction pass |
@@ -184,12 +223,6 @@ the grid) helps judge scale.
 A **Texture** panel appears for textured models (a dropdown selects between
 multiple textures). All edits feed the conversion directly:
 
-- **Color reduction** — K-means color quantization (weighted, in perceptual
-  CIELAB space, k-means++ seeded and deterministic): the slider maps to a
-  cluster count K (~48 colors when mild, 2 at maximum) and every pixel
-  snaps to its cluster's weighted-mean color. Shown only where it actually
-  reduces the decoration count; for imported 3D models it is hidden (model
-  decorations come from geometry, not from the texture's palette size).
 - **Recoloring** — hue shift, saturation, brightness, contrast, invert.
 - **Per-texture settings** — every texture keeps its own configuration;
   selecting another texture restores that texture's settings. With multiple
