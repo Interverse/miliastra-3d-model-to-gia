@@ -27,19 +27,34 @@ export function renderShell(root, {
       <span>🌐 <span data-i18n="lang.label"></span></span>
       <select id="lang-select"></select>
     </label>
+    <div class="workflow-switch" id="workflow-switch">
+      <button id="wf-model" class="active" data-i18n="wf.model"></button>
+      <button id="wf-sprite" data-i18n="wf.sprite"></button>
+    </div>
+
     <div class="sidebar-scroll">
 
+    <div id="sprite-studio" hidden></div>
+
+    <div id="model-workflow">
     <details class="panel" id="panel-model" open>
       <summary data-i18n="panel.model"></summary>
       <label class="filedrop" id="filedrop">
         <input type="file" id="file-input" multiple
           accept=".fbx,.obj,.glb,.gltf,.stl,.mtl,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tga">
         <span><span data-i18n="drop.line1"></span><br><span data-i18n="drop.line2"></span></span>
-        <span class="hint"><span data-i18n="drop.hint1"></span><br>
-          <span data-i18n="drop.hint2"></span></span>
+        <span class="hint"><span data-i18n="drop.hint1"></span></span>
+      </label>
+      <label class="row" id="row-model-name" hidden>
+        <span data-i18n="model.name"></span>
+        <input type="text" id="model-name">
       </label>
       <div id="model-info" class="stat-grid"></div>
       <div id="texture-list"></div>
+      <!-- legacy inline sprite path: retired — the Sprite workflow owns all
+           sprite UI now; kept in the DOM (permanently hidden) only so the
+           conversion engine's parameter plumbing stays intact -->
+      <div id="legacy-sprite" hidden>
       <button id="btn-sprite" hidden data-i18n="sprite.use"></button>
       <div id="sprite-params" hidden>
         <label class="row" data-i18n-title="tip.sprite.thick">
@@ -54,6 +69,7 @@ export function renderShell(root, {
           <span data-i18n="sprite.od"></span>
           <input type="checkbox" id="p-sprite-od" checked>
         </label>
+      </div>
       </div>
       <button id="btn-clear" class="secondary" data-i18n="btn.clear" data-i18n-title="tip.btn.clear"></button>
     </details>
@@ -142,7 +158,7 @@ export function renderShell(root, {
         </label>
         <label class="row" data-i18n-title="tip.param.smartedge">
           <span data-i18n="param.smartedge"></span>
-          <input type="checkbox" id="p-smartedge">
+          <input type="checkbox" id="p-smartedge" checked>
         </label>
         <label class="row" data-i18n-title="tip.param.snap">
           <span><span data-i18n="param.snap"></span> <em id="v-snap">1</em></span>
@@ -258,6 +274,7 @@ export function renderShell(root, {
       <div id="gen-stats" class="stat-grid"></div>
       <div id="gen-warnings"></div>
     </details>
+    </div><!-- /model-workflow -->
 
     <footer>
       <span data-i18n="footer.local"></span>

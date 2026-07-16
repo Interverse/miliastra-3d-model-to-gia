@@ -21,6 +21,8 @@
 //   }]
 //   buildGia opts.collision: default for models that don't specify it.
 
+import { ANIM_GRAPH_GUID, animGraphEntryBytes } from './anim-graph-blob.js';
+
 const GIA = (() => {
 
 // ---------- low-level protobuf writer ----------
@@ -103,8 +105,136 @@ const RENDER_DIST = 6700;
 
 // ---------- component writers ----------
 
+// ---------- custom variables (animation controller) ----------
+//
+// Reverse-engineered from Pig_Animated.gia / Balrog_Animated.gia. The
+// controller object carries a device of type 1 whose body (field 11) holds
+// repeated variable records:
+//   { 2: name, 3: typeCode, 4: TypedValue default, 5: 1, 6: TypedValue now }
+// Server type codes: 3 int, 4 bool, 6 string, 13 entity list, 27 dict.
+// Dict TypedValue: { 1:27, 2:{1:27, 2:{2:<metaUid>, 502:<keyT>, 503:<valT>}},
+//   37:{ repeated 1:<entry>, repeated 501:<keyTV>, repeated 502:<valTV>,
+//        503:<keyT>, 504:<valT> } }
+// Dict entry: { 1:25, 2:<same meta>, 35:{ 1:<keyTV>, 1:<valTV>,
+//   501:<metaUid>, 502:{2:28, 4:<entryGuid>} } }
+
+const DICT_ENTRY_GUID_BASE = 1073750273; // 0x40002101 (observed)
+
+// dict type-metadata uids are FIXED per key/value type signature — they are
+// registered inside the (byte-identical) animation graph blob, so all
+// animated exports share them: int→entityList 51, int→prefabList 60,
+// string→float 65 (verified identical across Pig and Balrog references)
+const DICT_TYPE_UIDS = { '3:13': 51, '3:23': 60, '6:5': 65 };
+
+function writeAnimVariables(m, spec) {
+  // spec: { animations: [{ name, secondsPerFrame, frames: [[objGuid,...]] }],
+  //         startingAnimation }
+  let entryGuid = spec.entryGuidBase ?? DICT_ENTRY_GUID_BASE;
+
+  const dictMeta = (v, field, uid, keyT, valT) => v.msg(field, (t) => {
+    t.vint(1, 27);
+    t.msg(2, (n) => { n.vint(2, uid); n.vint(502, keyT); n.vint(503, valT); });
+  });
+  const simpleMeta = (v, field, type) => v.msg(field, (t) => {
+    t.vint(1, type); t.str(2, '');
+  });
+  const tvInt = (v, val) => { // TypedValue int (write into a msg body)
+    v.vint(1, 3); simpleMeta(v, 2, 3);
+    if (val == null) v.emptyMsg(13);
+    else v.msg(13, (p) => p.vint(1, val));
+  };
+  const tvString = (v, s) => {
+    v.vint(1, 6); simpleMeta(v, 2, 6);
+    if (!s) v.emptyMsg(16);
+    else v.msg(16, (p) => p.str(1, s));
+  };
+  const tvBool = (v) => { v.vint(1, 4); simpleMeta(v, 2, 4); v.emptyMsg(14); };
+  const tvFloat = (v, f) => {
+    v.vint(1, 5); simpleMeta(v, 2, 5);
+    v.msg(15, (p) => p.f32(1, f));
+  };
+  const tvPrefabList = (v, guids) => {
+    v.vint(1, 23); simpleMeta(v, 2, 23);
+    v.msg(33, (p) => {
+      for (const g of guids) p.msg(1, (e) => { e.vint(1, 1); e.vint(2, g); });
+    });
+  };
+
+  // record with a simple (non-dict) type; current value = {1:type, 2:{}}
+  const record = (name, type, writeDefault) => m.msg(1, (r) => {
+    r.str(2, name);
+    r.vint(3, type);
+    r.msg(4, writeDefault);
+    r.vint(5, 1);
+    r.msg(6, (v) => { v.vint(1, type); v.emptyMsg(2); });
+  });
+
+  // dict record: entries = [{ key: {int|str}, val: {guids|float} }]
+  const dictRecord = (name, keyT, valT, entries, writeKey, writeVal) => {
+    const uid = DICT_TYPE_UIDS[`${keyT}:${valT}`];
+    m.msg(1, (r) => {
+      r.str(2, name);
+      r.vint(3, 27);
+      r.msg(4, (v) => {
+        v.vint(1, 27);
+        v.msg(2, (n) => { n.vint(1, 27); n.msg(2, (t) => {
+          t.vint(2, uid); t.vint(502, keyT); t.vint(503, valT);
+        }); });
+        v.msg(37, (d) => {
+          for (const en of entries) {
+            d.msg(1, (e) => {
+              e.vint(1, 25);
+              e.msg(2, (n) => { n.vint(1, 25); n.msg(2, (t) => {
+                t.vint(2, uid); t.vint(502, keyT); t.vint(503, valT);
+              }); });
+              e.msg(35, (pair) => {
+                pair.msg(1, (kv) => writeKey(kv, en.key));
+                pair.msg(1, (vv) => writeVal(vv, en.val));
+                pair.vint(501, uid);
+                pair.msg(502, (g) => { g.vint(2, 28); g.vint(4, entryGuid++); });
+              });
+            });
+          }
+          for (const en of entries) d.msg(501, (kv) => writeKey(kv, en.key));
+          for (const en of entries) d.msg(502, (vv) => writeVal(vv, en.val));
+          d.vint(503, keyT);
+          d.vint(504, valT);
+        });
+      });
+      r.vint(5, 1);
+      r.msg(6, (v) => {
+        v.vint(1, 27);
+        v.msg(2, (n) => {
+          n.vint(2, uid); n.vint(502, keyT); n.vint(503, valT);
+        });
+      });
+    });
+  };
+
+  // --- the nine records, in the reference order ---
+  record('Active Entities', 13, (v) => {
+    v.vint(1, 13); simpleMeta(v, 2, 13); v.emptyMsg(23);
+  });
+  dictRecord('Entity Cache', 3, 13, [], () => {}, () => {});
+  for (const anim of spec.animations) {
+    dictRecord(anim.name, 3, 23,
+      anim.frames.map((guids, fi) => ({ key: fi + 1, val: guids })),
+      (kv, key) => tvInt(kv, key),
+      (vv, guids) => tvPrefabList(vv, guids));
+  }
+  dictRecord('Animation FPS', 6, 5,
+    spec.animations.map((a) => ({ key: a.name, val: a.secondsPerFrame })),
+    (kv, key) => tvString(kv, key),
+    (vv, f) => tvFloat(vv, f));
+  dictRecord('Current Entities', 3, 13, [], () => {}, () => {});
+  record('Current Animation', 6, (v) => tvString(v, ''));
+  record('Frame', 3, (v) => tvInt(v, null));
+  record('Starting Animation', 6, (v) => tvString(v, spec.startingAnimation));
+  record('Anim Finished', 4, (v) => tvBool(v));
+}
+
 // Devices carried by DYNAMIC unit prefabs (envelope: body field = type + 10).
-function writeDeviceComponents(b, follow) {
+function writeDeviceComponents(b, follow, customVariables) {
   const effect = (m, field, label) => m.msg(field, (n) => {
     n.vint(3, 1); n.vint(4, 1); n.emptyMsg(5); n.emptyMsg(6); n.f32(7, 1);
     n.emptyMsg(8); n.emptyMsg(10); n.vint(11, 1); n.str(503, label); n.vint(507, 13);
@@ -115,7 +245,13 @@ function writeDeviceComponents(b, follow) {
     m.str(11, 'GI_RootNode');
   }); });
   for (const [type, field] of [[1, 11], [3, 13], [19, 29], [6, 16], [14, 24]]) {
-    b.msg(8, (c) => { c.vint(1, type); c.vint(2, 1); c.emptyMsg(field); });
+    b.msg(8, (c) => {
+      c.vint(1, type); c.vint(2, 1);
+      // device 1 body carries the object's custom variables (animation
+      // controller); everywhere else it is empty
+      if (type === 1 && customVariables) c.msg(field, customVariables);
+      else c.emptyMsg(field);
+    });
   }
   if (follow) {
     b.msg(8, (c) => { c.vint(1, 9); c.vint(2, 1); c.msg(19, (m) => {
@@ -160,7 +296,7 @@ function writeObjectEntry(w, obj) {
       b.msg(7, (c) => { c.vint(1, 1); c.msg(11, (m) => {
         vec3(m, 1, obj.position ?? { x: 0, y: 0, z: 0 }, true);
         m.emptyMsg(2);
-        vec3(m, 3, { x: 0.1, y: 0.1, z: 0.1 }, false);
+        vec3(m, 3, obj.zoom ?? { x: 0.1, y: 0.1, z: 0.1 }, false);
         m.vint(501, 0xFFFFFFFF);
       }); });
       b.msg(7, (c) => { c.vint(1, 2); c.emptyMsg(12); });
@@ -210,7 +346,7 @@ function writeObjectEntry(w, obj) {
         m.vint(3, 0xFFFFFFFF); m.f32(4, 100); m.vint(5, 0xFFFFFF); m.vint(6, RENDER_DIST);
       }); });
       // --- field 8 devices (dynamic unit prefabs only) ---
-      if (obj.dynamic) writeDeviceComponents(b, obj.follow);
+      if (obj.dynamic) writeDeviceComponents(b, obj.follow, obj.customVariables);
       b.vint(10, 1);
     }));
   });
@@ -447,6 +583,126 @@ function buildGia(opts) {
   return out;
 }
 
+// ---------- animated export ----------
+//
+// Reverse-engineered from Pig_Animated.gia / Balrog_Animated.gia:
+//   - one DYNAMIC frame object per ≤999 decorations, named
+//     {Name}_{Animation}_{Frame:02}_{Index:02}, follow devices, load
+//     optimization disabled
+//   - one controller object "MainAnim {Name}": dynamic, load optimization
+//     disabled, carries the custom variables (per-animation dictionaries
+//     frame→prefab-ID list, "Animation FPS" name→seconds-per-frame with
+//     NEGATIVE values marking one-shot animations, "Starting Animation")
+//     and owns the fixed animation node graph
+//   - the node graph entry is a byte-identical template shared by all
+//     animated exports (see anim-graph-blob.js)
+//
+// opts.animations: [{
+//   name: string,
+//   secondsPerFrame: number,     // already converted from FPS by the UI
+//   oneShot: boolean,            // encoded as negative secondsPerFrame
+//   frames: [ [ { decorations, position? }, ... ] ]  // models per frame
+// }]
+function buildAnimatedGia(opts) {
+  const {
+    name,
+    animations,
+    startingAnimation = animations[0]?.name ?? '',
+    exportName = name,
+    uid = 600489258,
+    timestamp = Math.floor(Date.now() / 1000),
+    fileId = 1073742039,
+    engineVersion = '6.7.0',
+    collision = true,
+  } = opts;
+
+  let objGuid = opts.objGuidBase ?? OBJ_GUID_BASE;
+  let decGuid = opts.decGuidBase ?? DEC_GUID_BASE;
+
+  // frame objects (dynamic + follow, like reference frame prefabs)
+  const frameObjs = [];
+  const animSpecs = [];
+  for (const anim of animations) {
+    const frames = [];
+    anim.frames.forEach((models, fi) => {
+      const guids = [];
+      models.forEach((m, oi) => {
+        const obj = {
+          name: `${name}_${anim.name}_${String(fi + 1).padStart(2, '0')}_${String(oi + 1).padStart(2, '0')}`,
+          position: m.position,
+          collision: m.collision ?? collision,
+          guid: objGuid++,
+          dynamic: true,
+          follow: true,
+          loadOptimization: false,
+          decorations: m.decorations.map((d, i) => ({
+            ...d,
+            name: d.name ?? `Decoration_${i + 1}`,
+            guid: decGuid++,
+          })),
+        };
+        frameObjs.push(obj);
+        guids.push(obj.guid);
+      });
+      frames.push(guids);
+    });
+    animSpecs.push({
+      name: anim.name,
+      // one-shot animations use a NEGATIVE seconds-per-frame
+      secondsPerFrame: (anim.oneShot ? -1 : 1) * Math.abs(anim.secondsPerFrame),
+      frames,
+    });
+  }
+
+  // controller: dynamic, no follow, variables + the animation graph.
+  // Unit zoom (frame prefabs keep the reference 0.1) and no collision —
+  // the controller itself is invisible and must not collide.
+  const controller = {
+    name: `MainAnim ${name}`,
+    collision: false,
+    zoom: { x: 1, y: 1, z: 1 },
+    guid: objGuid++,
+    dynamic: true,
+    follow: false,
+    loadOptimization: false,
+    graphGuid: ANIM_GRAPH_GUID,
+    decorations: [],
+    customVariables: (m) => writeAnimVariables(m, {
+      animations: animSpecs,
+      startingAnimation,
+    }),
+  };
+
+  const w = new W();
+  for (const obj of frameObjs) writeObjectEntry(w, obj);
+  writeObjectEntry(w, controller);
+  for (const obj of frameObjs) {
+    for (const d of obj.decorations) writeDecorationEntry(w, d, obj.guid);
+  }
+  // the animation node graph (reference bytes, renamed to "{Name} Anim")
+  {
+    const blob = animGraphEntryBytes(`${name} Anim`);
+    w.tag(2, 2);
+    w.varint(blob.length);
+    w.push(blob);
+  }
+  w.str(3, `${uid}-${timestamp}-${fileId}-\\${exportName}.gia`);
+  w.str(5, engineVersion);
+  const payload = w.finish();
+
+  const total = 20 + payload.length + 4;
+  const out = new Uint8Array(total);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, total - 4, false);
+  dv.setUint32(4, HEADER_MAGIC[0], false);
+  dv.setUint32(8, HEADER_MAGIC[1], false);
+  dv.setUint32(12, HEADER_MAGIC[2], false);
+  dv.setUint32(16, payload.length, false);
+  out.set(payload, 20);
+  dv.setUint32(total - 4, TRAILER, false);
+  return out;
+}
+
 // Split a flat decoration list into models of <= maxPerModel decorations.
 function splitIntoModels(name, decorations, maxPerModel = 999, position) {
   const models = [];
@@ -462,13 +718,13 @@ function splitIntoModels(name, decorations, maxPerModel = 999, position) {
   return models;
 }
 
-return { buildGia, splitIntoModels, W, packedVarints,
+return { buildGia, buildAnimatedGia, splitIntoModels, W, packedVarints,
   OBJECT_TEMPLATE_ID, TRIANGLE_MODEL_ID, LEGACY_TRIANGLE_MODEL_ID,
   SQUARE_MODEL_ID, PRIMITIVE_MODEL_IDS, OBJ_GUID_BASE, DEC_GUID_BASE,
   MAX_DECORATIONS_PER_MODEL: 999 };
 })();
 
-export const { buildGia, splitIntoModels, MAX_DECORATIONS_PER_MODEL,
+export const { buildGia, buildAnimatedGia, splitIntoModels, MAX_DECORATIONS_PER_MODEL,
   TRIANGLE_MODEL_ID, LEGACY_TRIANGLE_MODEL_ID, SQUARE_MODEL_ID,
   PRIMITIVE_MODEL_IDS, DEC_GUID_BASE } = GIA;
 export default GIA;

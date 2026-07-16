@@ -1100,3 +1100,474 @@ button.small {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ---------- workflow switch + sprite studio ---------- */
+.workflow-switch {
+  display: flex;
+  gap: 6px;
+}
+.workflow-switch button {
+  flex: 1;
+  width: auto;
+  margin: 0;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  background: #2a2e36;
+  color: #9aa3b0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.workflow-switch button:hover:not(.active) {
+  background: #3a4150;
+  color: #d8dbe0;
+}
+/* active tab: accent tint + border — the strongest non-Generate emphasis
+   in the sidebar (stands above the import buttons) */
+.workflow-switch button.active {
+  background: rgba(45, 108, 223, 0.22);
+  border-color: #2d6cdf;
+  color: #fff;
+}
+
+/* sprite studio panels stack like the model workflow */
+#sprite-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#sprite-studio[hidden] {
+  display: none;
+}
+/* the leading import action: emphasized secondary (bright text, bold) —
+   visually BELOW the workflow tabs, which keep the accent tint + border */
+#ss-add-images {
+  background: #2a2e36;
+  color: #e6e9ee;
+  font-weight: 600;
+}
+#ss-add-images:hover:not(:disabled) {
+  background: #3a4150;
+}
+/* subtle divider between control groups inside a panel */
+.ss-divider {
+  border-top: 1px solid #2a2e36;
+  margin: 12px 0 4px;
+}
+/* text inputs share the number-input look everywhere (asset name, sprite
+   name, …) */
+.row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  max-width: 160px;
+  background: #14161a;
+  color: #d8dbe0;
+  border: 1px solid #3a4150;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+/* compact icon-button strips (same pattern as the Optimize actions) */
+.btn-strip {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+.btn-strip select {
+  flex: none;
+  background: #14161a;
+  color: #d8dbe0;
+  border: 1px solid #3a4150;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+/* a mini button sitting inside a label row (e.g. the FPS/SPF toggle) */
+#sprite-studio .row button.mini {
+  flex: none;
+  width: auto;
+  padding: 4px 9px;
+}
+/* icon buttons: keep glyphs optically centered and aligned with any text */
+.btn-strip button,
+.ss-frame button,
+.se-frame-btns button,
+.workflow-switch button,
+.ah-nav button,
+.ah-head button,
+.se-head button,
+.se-foot button,
+.ap-foot button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  line-height: 1;
+}
+
+/* frames list */
+.ss-frames {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+.ss-frame {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border: 1px solid #2a2e36;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #1b1e24;
+  transition: border-color 0.12s;
+}
+.ss-frame:hover {
+  border-color: #3a4150;
+}
+.ss-frame.sel {
+  border-color: #2d6cdf;
+}
+.ss-frame span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.ss-frame canvas {
+  background: #14161a;
+  border-radius: 4px;
+  flex: none;
+}
+.ss-frame button {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 400;
+  background: #2a2e36;
+  color: #9aa3b0;
+}
+.ss-frame button:hover:not(:disabled) {
+  background: #3a4150;
+  color: #d8dbe0;
+}
+
+.ss-error {
+  color: #e07a6e;
+  font-size: 11px;
+  min-height: 15px;
+  margin-top: 6px;
+  overflow-wrap: break-word;
+}
+
+/* preview player */
+#ss-canvas {
+  display: block;
+  width: 100%;
+  background: #14161a;
+  border: 1px solid #2a2e36;
+  border-radius: 6px;
+  image-rendering: pixelated;
+}
+.ss-scrub {
+  display: block;
+  width: 100%;
+  margin: 6px 0 0;
+}
+/* ---------- prompt modal (replaces the native browser prompt) ---------- */
+.app-prompt {
+  background: #20242c;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  color: #d8dbe0;
+  padding: 0;
+  width: min(320px, 90vw);
+  font-size: 13px;
+}
+.app-prompt::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+.ap-head {
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2e36;
+}
+.ap-head .ap-title {
+  font-size: 13px;
+  color: #9aa3b0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+.ap-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 0;
+}
+.ap-body .ap-label {
+  font-size: 12px;
+  color: #9aa3b0;
+}
+.ap-body .ap-input {
+  background: #14161a;
+  color: #d8dbe0;
+  border: 1px solid #3a4150;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: inherit;
+}
+.ap-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.ap-foot button {
+  width: auto;
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+}
+
+/* ---------- shared dialog chrome (sheet editor + animation help) ---------- */
+.sheet-editor,
+.anim-help {
+  background: #20242c;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  color: #d8dbe0;
+  padding: 0;
+  font-size: 13px;
+}
+.sheet-editor::backdrop,
+.anim-help::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+/* dialog buttons are compact — opt out of the full-width sidebar default */
+.sheet-editor button,
+.anim-help button {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.sheet-editor .se-head strong,
+.anim-help .ah-title {
+  font-size: 13px;
+  color: #9aa3b0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+/* sprite sheet editor */
+.sheet-editor {
+  max-width: 96vw;
+}
+.se-head,
+.se-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+.se-head {
+  border-bottom: 1px solid #2a2e36;
+}
+.se-foot {
+  border-top: 1px solid #2a2e36;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.se-foot .se-foot-spacer {
+  flex: 1;
+}
+.se-head .se-hint {
+  flex: 1;
+  font-size: 11px;
+  color: #6b7482;
+}
+.se-main {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px 0;
+}
+.se-side {
+  width: 250px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sheet-editor fieldset {
+  border: 1px solid #2a2e36;
+  border-radius: 6px;
+  margin: 0;
+  padding: 8px;
+}
+.sheet-editor legend {
+  font-size: 11px;
+  color: #6b7482;
+  padding: 0 4px;
+}
+.se-params {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.se-params label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: #9aa3b0;
+  min-width: 0;
+}
+.se-params input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #14161a;
+  color: #d8dbe0;
+  border: 1px solid #3a4150;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+.se-params .se-reset {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+.se-frames .se-list {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.se-item {
+  text-align: left;
+  font-size: 11px;
+  padding: 3px 8px;
+  background: #1b1e24;
+  color: #d8dbe0;
+  border: 1px solid #2a2e36;
+  border-radius: 4px;
+  font-weight: 400;
+}
+.se-item:hover:not(:disabled) {
+  background: #2a2e36;
+}
+.se-item.sel {
+  border-color: #2d6cdf;
+}
+.se-frame-btns {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.se-frame-btns button {
+  flex: 1;
+  padding: 4px 0;
+}
+.se-canvas {
+  background: #14161a;
+  border: 1px solid #2a2e36;
+  border-radius: 6px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.se-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #9aa3b0;
+}
+.se-pv {
+  background: #14161a;
+  border: 1px solid #2a2e36;
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+.se-error {
+  color: #e07a6e;
+  font-size: 11px;
+  min-height: 15px;
+  overflow-wrap: break-word;
+}
+
+/* animation help dialog — FIXED size; images scale to fit (no layout
+   shifts while paging). Zoom shows the image at natural size with
+   scrollbars inside the same fixed body. */
+.anim-help {
+  width: min(920px, 92vw);
+  height: min(660px, 86vh);
+}
+.anim-help[open] {
+  display: flex;
+  flex-direction: column;
+}
+.ah-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2e36;
+}
+.ah-head .ah-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ah-head .ah-count {
+  flex: none;
+  color: #6b7482;
+  font-size: 12px;
+}
+.ah-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  padding: 10px 14px;
+}
+.ah-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  cursor: zoom-in;
+  margin: auto;
+}
+.ah-img.zoomed {
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  object-fit: unset;
+  cursor: zoom-out;
+  margin: auto;
+}
+.ah-caption {
+  flex: none;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e6e9ee;
+  padding: 8px 14px 0;
+}
+.ah-nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid #2a2e36;
+}

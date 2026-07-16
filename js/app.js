@@ -23,6 +23,7 @@ import { PRESETS } from "../engine/convert/converter.js";
 import { decimateTriangles } from "../engine/convert/decimate.js";
 import { t, num, onLangChange } from "./i18n.js";
 import { initTutorial } from "./tutorial.js";
+import { setupSpriteStudio } from "./sprite-studio.js";
 
 // Initialize the app against an already-rendered shell (see ui-shell.js).
 // mode: 'gia' (download button builds a .gia file) or 'primitives' (the
@@ -163,6 +164,9 @@ export function initApp({ mode = "gia" } = {}) {
   let lastParams = null; // params used for lastResult
   let jobId = 0;
   let busy = false;
+  let spriteMode = false; // Sprite workflow active (workflow switch)
+  let spriteStudio = null; // sprite studio API (setupSpriteStudio)
+  let spriteMulti = false; // sprite has multiple images (animated export)
 
   // ---------- file loading ----------
 
@@ -322,6 +326,12 @@ export function initApp({ mode = "gia" } = {}) {
     const mainFile = fileLibrary.get(currentModelName);
     if (!mainFile) return;
     currentName = mainFile.name.replace(/\.[^.]+$/, "");
+    // asset rename: the imported model's export name is editable
+    const nameRow = $("row-model-name");
+    if (nameRow) {
+      nameRow.hidden = false;
+      $("model-name").value = currentName;
+    }
 
     // fresh blob URLs for the whole library
     for (const u of urlMap.values()) URL.revokeObjectURL(u);
@@ -511,11 +521,9 @@ export function initApp({ mode = "gia" } = {}) {
       row.append(n, s);
       el.append(row);
     }
-    $("btn-sprite").hidden = !(
-      stagedImages > 0 &&
-      !currentModelName &&
-      !spriteImageName
-    );
+    // legacy inline sprite path retired: the dedicated Sprite workflow now
+    // owns all sprite UI (workflow switch at the top of the sidebar)
+    $("btn-sprite").hidden = true;
   }
 
   // ---------- 2D sprite -> 3D mode ----------
@@ -961,6 +969,99 @@ export function initApp({ mode = "gia" } = {}) {
     });
   }
 
+  // ---------- workflow switch (3D Model / Sprite) + sprite studio ----------
+  $("model-name")?.addEventListener("input", () => {
+    const v = $("model-name").value.trim();
+    if (v) currentName = v;
+  });
+  // shared with the Generate/Download handlers below
+  spriteMode = false;
+  {
+    const studioHost = $("sprite-studio");
+    if (studioHost) {
+      spriteStudio = setupSpriteStudio(studioHost, {
+        onPixelGrid: (px) => {
+          // sprite scene: primitive placement snaps to the pixel grid
+          const snap = $("ed-snapstep") ?? $("snapstep");
+          if (snap && px != null) snap.value = px * 10; // editor works in 0.1 m units
+        },
+        onValidity: (ok) => {
+          if (spriteMode) $("btn-generate").disabled = !ok || busy;
+        },
+        onProgress: (frac) => setProgress(20 + frac * 78),
+        getCollision: () => $("p-collision")?.checked ?? true,
+        getAutoAssemble: () => $("p-autoasm")?.checked ?? false,
+        onClear: () => clearReconstructions(),
+        // multiple images = animated export = no auto-assemble: disable the
+        // checkbox and force it off (single-image static exports keep it)
+        onAnimatedChange: (multi) => {
+          spriteMulti = multi;
+          const cb = $("p-autoasm");
+          if (!cb) return;
+          if (spriteMode) {
+            cb.disabled = multi;
+            if (multi) cb.checked = false;
+          }
+        },
+        // show the generated sprites in the viewport through the normal
+        // reconstruction pipeline (Scene panel, stats, editing, download).
+        // Every converted frame gets its own Scene entry; the last one is
+        // shown, the rest can be toggled on from the list.
+        onGenerated: (list) => {
+          for (const r of reconstructions) r.visible = false;
+          const params = { eulerOrder: "YXZ", flipZ: false };
+          for (const { msg, label } of list) {
+            const id = ++reconSeq;
+            reconstructions.push({
+              id, kind: "sprite", extra: label ? ` ${label}` : "",
+              msg, params, visible: false,
+            });
+          }
+          reconstructions.at(-1).visible = true;
+          // never evict the models we just generated
+          const keep = Math.max(8, list.length);
+          while (reconstructions.length > keep) {
+            const removed = reconstructions.shift();
+            if (removed.id === activeReconId) activeReconId = null;
+          }
+          setActiveRecon(reconstructions.at(-1).id);
+          renderReconList();
+          if ($("p-overlay").value === "wireframe") $("p-overlay").value = "both";
+          updateOverlays();
+          editor.onGenerated();
+          if (currentObject && $("tb-model").classList.contains("pressed")) {
+            setModelToggle(false);
+            showGenNotice();
+          }
+          // frame the fresh output in the viewport
+          if (currentObject) $("tb-focus")?.click();
+          else viewer.frame();
+          showToast(t("ss.genall", { n: list.length }));
+        },
+      });
+      const setWorkflow = (sprite) => {
+        spriteMode = sprite;
+        $("sprite-studio").hidden = !sprite;
+        $("model-workflow").hidden = sprite;
+        $("wf-model").classList.toggle("active", !sprite);
+        $("wf-sprite").classList.toggle("active", sprite);
+        // Generate lives in the shared action bar in both workflows
+        $("btn-generate").disabled = sprite
+          ? !spriteStudio.isValid() || busy
+          : (!extracted && !spriteImageName) || busy;
+        // auto-assemble: unavailable while the sprite is animated (multiple
+        // images); always available in the model workflow
+        const cb = $("p-autoasm");
+        if (cb) {
+          cb.disabled = sprite && spriteMulti;
+          if (sprite && spriteMulti) cb.checked = false;
+        }
+      };
+      $("wf-model")?.addEventListener("click", () => setWorkflow(false));
+      $("wf-sprite")?.addEventListener("click", () => setWorkflow(true));
+    }
+  }
+
   $("p-preset").addEventListener("change", () => {
     const preset = PRESETS[$("p-preset").value];
     if (!preset) return;
@@ -1012,13 +1113,55 @@ export function initApp({ mode = "gia" } = {}) {
 
   // ---------- generation ----------
 
-  $("btn-generate").addEventListener("click", () => {
-    if ((!extracted && !spriteImageName) || busy) return;
+  // Smooth progress: a trickle creeps toward 95% while a job runs so the
+  // bar always moves; real progress events only ever push it FORWARD.
+  let progressPct = 0;
+  let progressTimer = null;
+  function setProgress(pct) {
+    progressPct = Math.max(progressPct, Math.min(95, pct));
+    $("progress-bar").style.width = progressPct.toFixed(1) + "%";
+  }
+  function beginProgress() {
+    progressPct = 0;
+    $("progress").hidden = false;
+    setProgress(8);
+    clearInterval(progressTimer);
+    progressTimer = setInterval(() => setProgress(progressPct + (95 - progressPct) * 0.05), 180);
+  }
+  function endProgress() {
+    clearInterval(progressTimer);
+    progressTimer = null;
+    progressPct = 0;
+    $("progress").hidden = true;
+    $("progress-bar").style.width = "0";
+  }
+
+  $("btn-generate").addEventListener("click", async () => {
+    if (busy) return;
+    // Sprite workflow: the shared Generate button drives the studio
+    if (spriteMode) {
+      if (!spriteStudio?.isValid()) return;
+      busy = true;
+      $("btn-generate").disabled = true;
+      $("btn-generate").textContent = t("btn.converting");
+      beginProgress();
+      try {
+        await spriteStudio.generate(); // onGenerated adds the reconstructions
+      } catch {
+        /* error already shown inline by the studio */
+      } finally {
+        busy = false;
+        $("btn-generate").disabled = !spriteStudio.isValid();
+        $("btn-generate").textContent = t("btn.generate");
+        endProgress();
+      }
+      return;
+    }
+    if (!extracted && !spriteImageName) return;
     busy = true;
     $("btn-generate").disabled = true;
     $("btn-generate").textContent = t("btn.converting");
-    $("progress").hidden = false;
-    $("progress-bar").style.width = "30%";
+    beginProgress();
     const params = readParams();
     lastParams = params;
     const id = ++jobId;
@@ -1056,29 +1199,14 @@ export function initApp({ mode = "gia" } = {}) {
     return `${base}${e.extra ?? ""} #${e.id}`;
   }
 
-  worker.onmessage = (ev) => {
-    const msg = ev.data;
-    if (msg.jobId !== jobId) return;
-    busy = false;
-    $("btn-generate").disabled = false;
-    $("btn-generate").textContent = t("btn.generate");
-    $("progress").hidden = true;
-    $("progress-bar").style.width = "0";
-    if (!msg.ok) {
-      alert(t("err.convert", { msg: msg.error }));
-      return;
-    }
+  // Shared tail of every generation (worker results AND sprite-studio
+  // results): register the reconstruction and surface it in the viewport.
+  function addReconstruction(kind, extra, msg, params) {
     const id = ++reconSeq;
-    const p = lastParams ?? {};
-    let kind = ["direct", "voxel", "pixel"].includes(p.mode) ? p.mode : "direct";
-    let extra = "";
-    if (spriteImageName) kind = "sprite";
-    else if (p.mode === "voxel") extra = ` ${p.voxelRes}${p.voxelSurface === "mc" ? " MC" : ""}`;
-    else if (p.mode === "direct" && p.primitiveMode === "both") extra = " +squares";
     // a new generation hides the previous reconstructions so only the fresh
     // result is visible (they can be re-enabled from the list)
     for (const r of reconstructions) r.visible = false;
-    reconstructions.push({ id, kind, extra, msg, params: p, visible: true });
+    reconstructions.push({ id, kind, extra, msg, params, visible: true });
     if (reconstructions.length > 8) {
       const removed = reconstructions.shift();
       if (removed.id === activeReconId) activeReconId = null;
@@ -1089,12 +1217,34 @@ export function initApp({ mode = "gia" } = {}) {
     // wireframe-only overlay (an explicit Solid choice is respected)
     if ($("p-overlay").value === "wireframe") $("p-overlay").value = "both";
     updateOverlays();
+    // frame the new result once (no source model to anchor the camera)
+    if (!currentObject) viewer.frame();
     editor.onGenerated();
     // prioritize the generated preview: hide the base model (restorable)
     if (currentObject && $("tb-model").classList.contains("pressed")) {
       setModelToggle(false);
       showGenNotice();
     }
+  }
+
+  worker.onmessage = (ev) => {
+    const msg = ev.data;
+    if (msg.jobId !== jobId) return;
+    busy = false;
+    $("btn-generate").disabled = false;
+    $("btn-generate").textContent = t("btn.generate");
+    endProgress();
+    if (!msg.ok) {
+      alert(t("err.convert", { msg: msg.error }));
+      return;
+    }
+    const p = lastParams ?? {};
+    let kind = ["direct", "voxel", "pixel"].includes(p.mode) ? p.mode : "direct";
+    let extra = "";
+    if (spriteImageName) kind = "sprite";
+    else if (p.mode === "voxel") extra = ` ${p.voxelRes}${p.voxelSurface === "mc" ? " MC" : ""}`;
+    else if (p.mode === "direct" && p.primitiveMode === "both") extra = " +squares";
+    addReconstruction(kind, extra, msg, p);
   };
 
   function setActiveRecon(id) {
@@ -1269,7 +1419,9 @@ export function initApp({ mode = "gia" } = {}) {
       offset: null,
     }));
     viewer.setOverlays(entries, mode);
-    if (!currentObject) viewer.frame();
+    // NOTE: no automatic camera framing here — updateOverlays runs on every
+    // edit (placing primitives, visibility toggles, …) and re-framing would
+    // yank the camera around. Framing happens once per new generation.
   }
 
   $("p-overlay").addEventListener("change", updateOverlays);
@@ -1363,6 +1515,20 @@ export function initApp({ mode = "gia" } = {}) {
   }
 
   $("btn-download")?.addEventListener("click", () => {
+    // Sprite workflow: download the studio's export (animated .gia when the
+    // sprite has animations, plain .gia for a single image)
+    if (spriteMode) {
+      const exp = spriteStudio?.getExport();
+      if (!exp) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(
+        new Blob([exp.bytes], { type: "application/octet-stream" }),
+      );
+      a.download = exp.filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      return;
+    }
     if (!lastResult) return;
     const models = splitIntoModels(currentName, lastResult.decorations);
     const bytes = buildGia({
