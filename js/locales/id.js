@@ -504,4 +504,8 @@ export default {
   "ss.genall": "Semua {n} model berhasil dibuat",
   "sheet.saveanim": "Simpan potongan sebagai animasi baru",
   "ss.err.noimages": "Tambahkan minimal satu gambar",
+  "ss.pivot": "Pivot (px)",
+  "tip.ss.pivot": "Titik gambar (piksel, dari kiri atas) yang menjadi titik asal model — klik pratinjau untuk mengaturnya. Bawaan: tengah bawah",
+  "ss.pivotall": "Terapkan pivot ke semua gambar",
+  "tip.ss.pivotall": "Menyalin posisi pivot relatif gambar ini ke semua gambar lain",
 };

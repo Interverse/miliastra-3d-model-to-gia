@@ -89,6 +89,13 @@ export function setupSpriteStudio(host, opts = {}) {
     <div class="hint2" data-i18n="ss.importhint"></div>
     <div class="ss-frames" id="ss-frames"></div>
     <div class="hint2" id="ss-frames-hint" hidden data-i18n="ss.frameshint"></div>
+    <div class="row" id="ss-pivot-row" hidden data-i18n-title="tip.ss.pivot">
+      <span data-i18n="ss.pivot"></span>
+      <input id="ss-pivot-x" type="number" step="1">
+      <input id="ss-pivot-y" type="number" step="1">
+    </div>
+    <button id="ss-pivot-all" class="secondary" hidden data-i18n="ss.pivotall"
+      data-i18n-title="tip.ss.pivotall"></button>
     <div class="ss-divider"></div>
     <label class="row"><span data-i18n="ss.name"></span>
       <input id="ss-name" type="text" value="Sprite"></label>
@@ -283,6 +290,26 @@ export function setupSpriteStudio(host, opts = {}) {
   const player = { playing: false, frame: 0, animId: null, speed: 1, acc: 0, last: 0 };
   const cvs = $('ss-canvas');
   const pctx = cvs.getContext('2d');
+  // the asset shown in the preview / selected in the frames list
+  const selectedAsset = () => {
+    const a = anim();
+    return a ? state.assets.find((s) => s.id === a.frames[player.frame]) ?? null : null;
+  };
+  // where the current asset lands inside the preview canvas
+  const previewLayout = (asset) => {
+    const { width: w, height: h } = asset.pixels;
+    const k = Math.min((cvs.width - 16) / w, (cvs.height - 16) / h);
+    return { k, ox: (cvs.width - w * k) / 2, oy: (cvs.height - h * k) / 2 };
+  };
+  const syncPivotUI = () => {
+    const asset = selectedAsset();
+    $('ss-pivot-row').hidden = !asset;
+    $('ss-pivot-all').hidden = !asset || state.assets.length < 2;
+    if (asset) {
+      $('ss-pivot-x').value = asset.pivot.x;
+      $('ss-pivot-y').value = asset.pivot.y;
+    }
+  };
   const renderPlayer = () => {
     const a = anim();
     player.animId = state.current;
@@ -296,14 +323,38 @@ export function setupSpriteStudio(host, opts = {}) {
       : '';
     pctx.fillStyle = '#14161a';
     pctx.fillRect(0, 0, cvs.width, cvs.height);
-    const asset = a && state.assets.find((s) => s.id === a.frames[player.frame]);
+    const asset = selectedAsset();
     if (asset) {
       const { width: w, height: h, canvas } = asset.pixels;
-      const k = Math.min((cvs.width - 16) / w, (cvs.height - 16) / h);
+      const { k, ox, oy } = previewLayout(asset);
       pctx.imageSmoothingEnabled = k < 1;
-      pctx.drawImage(canvas, (cvs.width - w * k) / 2, (cvs.height - h * k) / 2, w * k, h * k);
+      pctx.drawImage(canvas, ox, oy, w * k, h * k);
+      // pivot crosshair (the point that becomes the model origin)
+      const cx = ox + asset.pivot.x * k;
+      const cy = oy + asset.pivot.y * k;
+      pctx.strokeStyle = '#fff';
+      pctx.lineWidth = 3;
+      pctx.beginPath();
+      pctx.moveTo(cx - 7, cy); pctx.lineTo(cx + 7, cy);
+      pctx.moveTo(cx, cy - 7); pctx.lineTo(cx, cy + 7);
+      pctx.stroke();
+      pctx.strokeStyle = '#2d6cdf';
+      pctx.lineWidth = 1.5;
+      pctx.beginPath();
+      pctx.moveTo(cx - 7, cy); pctx.lineTo(cx + 7, cy);
+      pctx.moveTo(cx, cy - 7); pctx.lineTo(cx, cy + 7);
+      pctx.stroke();
+    }
+    syncPivotUI();
+    // the viewport mirrors the selected image (only on actual changes —
+    // renderPlayer runs every animation tick)
+    const key = `${asset?.id ?? ''}|${state.settings.pixelSize}`;
+    if (key !== lastPreviewKey) {
+      lastPreviewKey = key;
+      opts.onImageSelected?.(asset ?? null);
     }
   };
+  let lastPreviewKey = '';
   const tick = (ts) => {
     requestAnimationFrame(tick);
     const a = anim();
@@ -324,7 +375,10 @@ export function setupSpriteStudio(host, opts = {}) {
 
   // ---------- import ----------
   const addAsset = (name, pixels) => {
-    const asset = { id: uid(), name, pixels };
+    // default pivot = bottom-center, which is exactly where the engine
+    // already puts the origin — so an untouched pivot changes nothing
+    const asset = { id: uid(), name, pixels,
+      pivot: { x: Math.round(pixels.width / 2), y: pixels.height } };
     state.assets.push(asset);
     anim()?.frames.push(asset.id);
     return asset;
@@ -471,6 +525,39 @@ export function setupSpriteStudio(host, opts = {}) {
   });
   $('ss-help').addEventListener('click', () => openAnimHelp());
 
+  // ---------- pivot editing ----------
+  for (const [id, axis] of [['ss-pivot-x', 'x'], ['ss-pivot-y', 'y']]) {
+    $(id).addEventListener('input', () => {
+      const asset = selectedAsset();
+      const v = parseFloat($(id).value);
+      if (asset && isFinite(v)) { asset.pivot[axis] = v; renderPlayer(); }
+    });
+  }
+  // apply the SAME RELATIVE position to every image (sizes may differ)
+  $('ss-pivot-all').addEventListener('click', () => {
+    const src = selectedAsset();
+    if (!src) return;
+    const fx = src.pivot.x / src.pixels.width;
+    const fy = src.pivot.y / src.pixels.height;
+    for (const asset of state.assets) {
+      if (asset === src) continue;
+      asset.pivot.x = Math.round(fx * asset.pixels.width);
+      asset.pivot.y = Math.round(fy * asset.pixels.height);
+    }
+    renderPlayer();
+  });
+  // clicking the preview sets the pivot of the shown image
+  cvs.addEventListener('pointerdown', (ev) => {
+    const asset = selectedAsset();
+    if (!asset) return;
+    const r = cvs.getBoundingClientRect();
+    const sx = cvs.width / r.width, sy = cvs.height / r.height;
+    const { k, ox, oy } = previewLayout(asset);
+    asset.pivot.x = Math.round(((ev.clientX - r.left) * sx - ox) / k);
+    asset.pivot.y = Math.round(((ev.clientY - r.top) * sy - oy) / k);
+    renderPlayer();
+  });
+
   // player controls
   $('ss-play').addEventListener('click', () => { player.playing = !player.playing; renderPlayer(); });
   $('ss-restart').addEventListener('click', () => { player.frame = 0; player.acc = 0; renderPlayer(); renderFrames(); });
@@ -523,6 +610,30 @@ export function setupSpriteStudio(host, opts = {}) {
     });
   });
 
+  // Shift a freshly converted result so the image's pivot lands at the
+  // model origin. Engine mapping: worldX = (px - w/2)·ps, worldY = (h - py)·ps
+  // — i.e. the default origin is the BOTTOM-CENTER of the image, which is
+  // exactly the default pivot (zero shift). Decoration positions are in
+  // 0.1 m units; the preview triangle soup is in meters.
+  const applyPivot = (res, asset) => {
+    const { width: w, height: h } = asset.pixels;
+    const p = asset.pivot ?? { x: w / 2, y: h };
+    const ps = state.settings.pixelSize;
+    const ox = -(p.x - w / 2) * ps; // meters
+    const oy = -(h - p.y) * ps;
+    if (!ox && !oy) return;
+    for (const d of res.decorations) {
+      d.position.x += ox * 10;
+      d.position.y += oy * 10;
+    }
+    if (res.positions) {
+      for (let i = 0; i < res.positions.length; i += 3) {
+        res.positions[i] += ox;
+        res.positions[i + 1] += oy;
+      }
+    }
+  };
+
   // an export is "animated" unless it is exactly one animation of one frame
   const isAnimated = () =>
     state.animations.length > 1 || (state.animations[0]?.frames.length ?? 0) > 1;
@@ -541,7 +652,9 @@ export function setupSpriteStudio(host, opts = {}) {
       let done = 0;
       for (const fid of used) {
         const asset = state.assets.find((s) => s.id === fid);
-        results.set(fid, await convertAsset(asset));
+        const res = await convertAsset(asset);
+        applyPivot(res, asset); // shift so the pivot becomes the origin
+        results.set(fid, res);
         done++;
         opts.onProgress?.(done / used.size);
       }

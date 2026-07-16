@@ -504,4 +504,8 @@ export default {
   "ss.genall": "Generati tutti i {n} modelli",
   "sheet.saveanim": "Salva i ritagli come nuova animazione",
   "ss.err.noimages": "Aggiungi almeno un'immagine",
+  "ss.pivot": "Pivot (px)",
+  "tip.ss.pivot": "Punto dell'immagine (pixel, dall'angolo in alto a sinistra) che diventa l'origine del modello — clicca l'anteprima per impostarlo. Predefinito: centro in basso",
+  "ss.pivotall": "Applica il pivot a tutte le immagini",
+  "tip.ss.pivotall": "Copia la posizione relativa del pivot di questa immagine su tutte le altre",
 };

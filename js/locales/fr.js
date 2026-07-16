@@ -504,4 +504,8 @@ export default {
   "ss.genall": "Les {n} modèles ont été générés",
   "sheet.saveanim": "Enregistrer les découpes comme nouvelle animation",
   "ss.err.noimages": "Ajoutez au moins une image",
+  "ss.pivot": "Pivot (px)",
+  "tip.ss.pivot": "Point de l'image (pixels, depuis le coin supérieur gauche) qui devient l'origine du modèle — cliquez sur l'aperçu pour le définir. Par défaut : bas-centre",
+  "ss.pivotall": "Appliquer le pivot à toutes les images",
+  "tip.ss.pivotall": "Copie la position relative du pivot de cette image sur toutes les autres",
 };

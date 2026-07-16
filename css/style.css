@@ -1186,6 +1186,11 @@ button.small {
   width: auto;
   padding: 4px 9px;
 }
+/* pivot X/Y pair shares the sidebar row without overflowing */
+#ss-pivot-row input[type="number"] {
+  width: 62px;
+  flex: none;
+}
 /* icon buttons: keep glyphs optically centered and aligned with any text */
 .btn-strip button,
 .ss-frame button,

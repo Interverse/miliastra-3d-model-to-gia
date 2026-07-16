@@ -504,4 +504,8 @@ export default {
   "ss.genall": "Alle {n} Modelle generiert",
   "sheet.saveanim": "Zuschnitte als neue Animation speichern",
   "ss.err.noimages": "Mindestens ein Bild hinzufügen",
+  "ss.pivot": "Pivot (px)",
+  "tip.ss.pivot": "Bildpunkt (Pixel, von oben links), der zum Modellursprung wird — zum Setzen in die Vorschau klicken. Standard: unten Mitte",
+  "ss.pivotall": "Pivot auf alle Bilder anwenden",
+  "tip.ss.pivotall": "Überträgt die relative Pivot-Position dieses Bildes auf alle anderen Bilder",
 };

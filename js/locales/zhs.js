@@ -504,4 +504,8 @@ export default {
   "ss.genall": "已生成全部 {n} 个模型",
   "sheet.saveanim": "将切片保存为新动画",
   "ss.err.noimages": "请至少添加一张图片",
+  "ss.pivot": "轴心 (px)",
+  "tip.ss.pivot": "成为模型原点的图片位置（像素，自左上角起）——点击预览即可设置。默认：底部居中",
+  "ss.pivotall": "将轴心应用到所有图片",
+  "tip.ss.pivotall": "将此图片的相对轴心位置复制到所有其他图片",
 };

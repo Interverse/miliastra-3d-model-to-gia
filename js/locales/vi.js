@@ -504,4 +504,8 @@ export default {
   "ss.genall": "Đã tạo tất cả {n} mô hình",
   "sheet.saveanim": "Lưu các lát cắt thành hoạt ảnh mới",
   "ss.err.noimages": "Thêm ít nhất một hình ảnh",
+  "ss.pivot": "Điểm neo (px)",
+  "tip.ss.pivot": "Điểm trên ảnh (pixel, từ góc trên bên trái) sẽ trở thành gốc tọa độ của mô hình — nhấp vào bản xem trước để đặt. Mặc định: giữa cạnh dưới",
+  "ss.pivotall": "Áp dụng điểm neo cho tất cả hình ảnh",
+  "tip.ss.pivotall": "Sao chép vị trí điểm neo tương đối của ảnh này sang tất cả ảnh khác",
 };

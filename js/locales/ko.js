@@ -504,4 +504,8 @@ export default {
   "ss.genall": "{n}개 모델을 모두 생성했습니다",
   "sheet.saveanim": "슬라이스를 새 애니메이션으로 저장",
   "ss.err.noimages": "이미지를 하나 이상 추가하세요",
+  "ss.pivot": "피벗 (px)",
+  "tip.ss.pivot": "모델 원점이 되는 이미지의 지점(왼쪽 위 기준 픽셀) — 미리보기를 클릭해 설정할 수 있습니다. 기본값: 아래쪽 중앙",
+  "ss.pivotall": "피벗을 모든 이미지에 적용",
+  "tip.ss.pivotall": "이 이미지의 상대 피벗 위치를 다른 모든 이미지에 복사합니다",
 };

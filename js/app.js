@@ -113,7 +113,8 @@ export function initApp({ mode = "gia" } = {}) {
       rebuild: (light) => rebuildActiveRecon(light),
       toast: (t) => showToast(t),
       budget: () => Math.max(1, parseInt($("p-max").value, 10) || 99900),
-      getSourceObject: () => displayedObject,
+      getSourceObject: () =>
+        spriteMode ? spritePreviewObject : displayedObject,
       // base-model transform <-> gizmo sync
       getModelTransform: () => ({
         ...readUserTransform(),
@@ -167,6 +168,7 @@ export function initApp({ mode = "gia" } = {}) {
   let spriteMode = false; // Sprite workflow active (workflow switch)
   let spriteStudio = null; // sprite studio API (setupSpriteStudio)
   let spriteMulti = false; // sprite has multiple images (animated export)
+  let spritePreviewObject = null; // textured plane: the selected sprite image
 
   // ---------- file loading ----------
 
@@ -992,6 +994,7 @@ export function initApp({ mode = "gia" } = {}) {
         getCollision: () => $("p-collision")?.checked ?? true,
         getAutoAssemble: () => $("p-autoasm")?.checked ?? false,
         onClear: () => clearReconstructions(),
+        onImageSelected: (asset) => setSpritePreview(asset),
         // multiple images = animated export = no auto-assemble: disable the
         // checkbox and force it off (single-image static exports keep it)
         onAnimatedChange: (multi) => {
@@ -1030,13 +1033,14 @@ export function initApp({ mode = "gia" } = {}) {
           updateOverlays();
           updateDropHint();
           editor.onGenerated();
-          if (currentObject && $("tb-model").classList.contains("pressed")) {
+          // hide the flat image preview so the generated output is visible
+          // (one-click restore via the notice / Model toggle)
+          if (spritePreviewObject && $("tb-model").classList.contains("pressed")) {
             setModelToggle(false);
             showGenNotice();
           }
           // frame the fresh output in the viewport
-          if (currentObject) $("tb-focus")?.click();
-          else viewer.frame();
+          viewer.frame();
           showToast(t("ss.genall", { n: list.length }));
         },
       });
@@ -1046,6 +1050,10 @@ export function initApp({ mode = "gia" } = {}) {
         $("model-workflow").hidden = sprite;
         $("wf-model").classList.toggle("active", !sprite);
         $("wf-sprite").classList.toggle("active", sprite);
+        // each workflow shows its own source: the loaded model, or the
+        // selected sprite image
+        viewer.setModel(sprite ? spritePreviewObject : displayedObject);
+        updateDropHint();
         // Generate lives in the shared action bar in both workflows
         $("btn-generate").disabled = sprite
           ? !spriteStudio.isValid() || busy
@@ -1201,9 +1209,47 @@ export function initApp({ mode = "gia" } = {}) {
   }
 
   // "Load a model to begin" only makes sense while the viewport is truly
-  // empty: no source model AND no generated reconstructions.
+  // empty: no source model, no sprite image preview, no reconstructions.
   function updateDropHint() {
-    $("drop-hint").hidden = !!currentObject || reconstructions.length > 0;
+    $("drop-hint").hidden =
+      !!currentObject ||
+      reconstructions.length > 0 ||
+      (spriteMode && !!spritePreviewObject);
+  }
+
+  // Viewport preview of the SELECTED sprite image: a textured plane placed
+  // exactly where the generated output will appear (bottom edge on the
+  // ground, x-centered — the engine's sprite mapping).
+  function setSpritePreview(asset) {
+    const hadNone = !spritePreviewObject;
+    spritePreviewObject = null;
+    if (asset) {
+      const { width: w, height: h, canvas } = asset.pixels;
+      const ps = spriteStudio?.state.settings.pixelSize ?? 0.05;
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.magFilter = THREE.NearestFilter;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(w * ps, h * ps),
+        new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          alphaTest: 0.05,
+          side: THREE.DoubleSide,
+        }),
+      );
+      plane.position.y = (h * ps) / 2;
+      spritePreviewObject = plane;
+    }
+    if (spriteMode) {
+      viewer.setModel(spritePreviewObject);
+      if (spritePreviewObject) {
+        setModelToggle(true);
+        // frame the very first preview so it is actually in view
+        if (hadNone && reconstructions.length === 0) viewer.frame();
+      }
+      updateDropHint();
+    }
   }
 
   // Shared tail of every generation (worker results AND sprite-studio
