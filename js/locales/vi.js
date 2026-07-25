@@ -518,4 +518,6 @@ export default {
   "tip.ss.optreset": "Khôi phục tất cả hình ảnh về trạng thái gốc khi nhập, hoàn tác tối ưu hóa",
   "t.cancelled": "Đã hủy chuyển đổi",
   "ss.drop": "Thả hình ảnh, GIF hoặc sprite sheet vào đây",
+  "ss.colmerge": "Gộp màu tương tự",
+  "tip.ss.colmerge": "Các màu trong khoảng cách RGB này được gộp thành một màu đại diện khi tối ưu hình — vùng phẳng lớn hơn nghĩa là ít khối cơ bản hơn, đổi lại màu thay đổi nhẹ. 0 = tắt",
 };

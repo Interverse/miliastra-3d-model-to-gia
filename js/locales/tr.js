@@ -518,4 +518,6 @@ export default {
   "tip.ss.optreset": "Tüm görselleri içe aktarıldıkları özgün duruma döndürür ve iyileştirmeyi geri alır",
   "t.cancelled": "Dönüştürme iptal edildi",
   "ss.drop": "Görselleri, GIF'leri veya sprite sayfalarını buraya bırakın",
+  "ss.colmerge": "Benzer renkleri birleştir",
+  "tip.ss.colmerge": "Görsel iyileştirme sırasında bu RGB mesafesi içindeki renkler tek bir temsilci renkte birleştirilir — daha büyük düz alanlar daha az temel şekil demektir, karşılığında hafif renk sapması olur. 0 = kapalı",
 };

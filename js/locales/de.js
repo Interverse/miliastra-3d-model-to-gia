@@ -518,4 +518,6 @@ export default {
   "tip.ss.optreset": "Stellt alle Bilder im ursprünglich importierten Zustand wieder her und macht die Bildoptimierung rückgängig",
   "t.cancelled": "Konvertierung abgebrochen",
   "ss.drop": "Bilder, GIFs oder Sprite-Sheets hier ablegen",
+  "ss.colmerge": "Ähnliche Farben zusammenführen",
+  "tip.ss.colmerge": "Farben innerhalb dieses RGB-Abstands werden bei der Bildoptimierung zu einer repräsentativen Farbe zusammengeführt — größere einfarbige Flächen bedeuten weniger Grundkörper, bei leichter Farbabweichung. 0 = aus",
 };

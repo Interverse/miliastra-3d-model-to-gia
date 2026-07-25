@@ -518,4 +518,6 @@ export default {
   "tip.ss.optreset": "Restaura todas las imágenes a su estado original importado, deshaciendo la optimización",
   "t.cancelled": "Conversión cancelada",
   "ss.drop": "Suelta aquí imágenes, GIFs u hojas de sprites",
+  "ss.colmerge": "Fusionar colores similares",
+  "tip.ss.colmerge": "Los colores dentro de esta distancia RGB se fusionan en un color representativo al optimizar imágenes — regiones planas más grandes significan menos primitivas, a costa de una ligera variación de color. 0 = desactivado",
 };

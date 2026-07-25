@@ -519,4 +519,6 @@ export default {
   "tip.ss.optreset": "Restore every image to its original imported state, undoing Optimize Images",
   "t.cancelled": "Conversion cancelled",
   "ss.drop": "Drop images, GIFs, or sprite sheets here",
+  "ss.colmerge": "Merge similar colors",
+  "tip.ss.colmerge": "Colors within this RGB distance are merged into one representative color during Optimize Images — larger flat regions mean fewer primitives, at the cost of slight color variation. 0 = off",
 };

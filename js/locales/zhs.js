@@ -518,4 +518,6 @@ export default {
   "tip.ss.optreset": "将所有图片恢复到导入时的原始状态，撤销图片优化",
   "t.cancelled": "已取消转换",
   "ss.drop": "将图片、GIF 或精灵表拖放到此处",
+  "ss.colmerge": "合并相似颜色",
+  "tip.ss.colmerge": "优化图片时，将此 RGB 距离内的颜色合并为一个代表色——更大的平坦区域意味着更少的图元，代价是颜色略有变化。0 = 关闭",
 };

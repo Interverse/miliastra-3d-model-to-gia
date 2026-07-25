@@ -65,6 +65,74 @@ async function decodeGifFrames(file) {
   return out;
 }
 
+// ---------- color similarity merging ----------
+// Deterministic greedy palette merge: colors are histogrammed (5 bits per
+// channel), visited from most to least frequent (ties by bucket key), and
+// each bucket either joins the FIRST existing representative within
+// `tolerance` (Euclidean RGB distance) or becomes a new one. Frequent
+// colors therefore anchor the palette, similar shades collapse into them,
+// and clearly different colors (sharp edges, outlines) stay separate.
+// Transparency is untouched. A spatial hash over representatives keeps the
+// pass fast on anti-aliased high-resolution sources.
+export function mergeSimilarColors(pixels, tolerance) {
+  const { width, height, data } = pixels;
+  const out = new Uint8ClampedArray(data);
+  if (!(tolerance > 0)) return { width, height, data: out };
+  const buckets = new Map(); // 15-bit key -> [count, Σr, Σg, Σb]
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 128) continue;
+    const key = (data[i] >> 3) << 10 | (data[i + 1] >> 3) << 5 | (data[i + 2] >> 3);
+    let b = buckets.get(key);
+    if (!b) buckets.set(key, b = [0, 0, 0, 0]);
+    b[0]++; b[1] += data[i]; b[2] += data[i + 1]; b[3] += data[i + 2];
+  }
+  const entries = [...buckets.entries()]
+    .map(([key, b]) => ({ key, n: b[0], r: b[1] / b[0], g: b[2] / b[0], b: b[3] / b[0] }))
+    .sort((a, b) => b.n - a.n || a.key - b.key);
+  const reps = [];
+  const cells = new Map(); // spatial hash: color cell -> rep indices
+  const cellOf = (r, g, b) =>
+    `${Math.floor(r / tolerance)},${Math.floor(g / tolerance)},${Math.floor(b / tolerance)}`;
+  const assign = new Map(); // bucket key -> rep index
+  const t2 = tolerance * tolerance;
+  for (const e of entries) {
+    // candidates: reps in the 27 neighboring color cells; pick the LOWEST
+    // rep index within tolerance (deterministic)
+    let found = -1;
+    const cr = Math.floor(e.r / tolerance), cg = Math.floor(e.g / tolerance), cb = Math.floor(e.b / tolerance);
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dg = -1; dg <= 1; dg++) {
+        for (let db = -1; db <= 1; db++) {
+          const list = cells.get(`${cr + dr},${cg + dg},${cb + db}`);
+          if (!list) continue;
+          for (const ri of list) {
+            const rep = reps[ri];
+            const xr = e.r - rep.r, xg = e.g - rep.g, xb = e.b - rep.b;
+            if (xr * xr + xg * xg + xb * xb <= t2 && (found < 0 || ri < found)) found = ri;
+          }
+        }
+      }
+    }
+    if (found < 0) {
+      found = reps.length;
+      reps.push(e);
+      const ck = cellOf(e.r, e.g, e.b);
+      if (!cells.has(ck)) cells.set(ck, []);
+      cells.get(ck).push(found);
+    }
+    assign.set(e.key, found);
+  }
+  for (let i = 0; i < out.length; i += 4) {
+    if (out[i + 3] < 128) continue;
+    const key = (out[i] >> 3) << 10 | (out[i + 1] >> 3) << 5 | (out[i + 2] >> 3);
+    const rep = reps[assign.get(key)];
+    out[i] = Math.round(rep.r);
+    out[i + 1] = Math.round(rep.g);
+    out[i + 2] = Math.round(rep.b);
+  }
+  return { width, height, data: out };
+}
+
 // ---------- image optimizer ----------
 // Web images of pixel sprites are usually upscaled (one logical pixel ≈
 // k×k screen pixels — k is often FRACTIONAL after web resizing), padded
@@ -390,6 +458,10 @@ export function setupSpriteStudio(host, opts = {}) {
       <span data-i18n="ss.optpx"></span>
       <input id="ss-optpx" type="number" value="0" min="0" step="0.5">
     </div>
+    <label class="row" id="ss-colmerge-row" hidden data-i18n-title="tip.ss.colmerge">
+      <span><span data-i18n="ss.colmerge"></span> <em id="ss-v-colmerge">0</em></span>
+      <input id="ss-colmerge" type="range" min="0" max="100" value="0" step="1">
+    </label>
     <button id="ss-optimize" class="secondary" hidden data-i18n="ss.optimize"
       data-i18n-title="tip.ss.optimize"></button>
     <button id="ss-optreset" class="secondary" hidden data-i18n="ss.optreset"
@@ -606,6 +678,7 @@ export function setupSpriteStudio(host, opts = {}) {
     $('ss-pivot-all').hidden = !asset || state.assets.length < 2;
     $('ss-optimize').hidden = !state.assets.length;
     $('ss-optpx-row').hidden = !state.assets.length;
+    $('ss-colmerge-row').hidden = !state.assets.length;
     $('ss-optreset').hidden = !state.assets.some((a) => a.original);
     if (asset) {
       $('ss-pivot-x').value = asset.pivot.x;
@@ -793,6 +866,8 @@ export function setupSpriteStudio(host, opts = {}) {
     $('ss-name').value = 'Sprite';
     $('ss-optinfo').textContent = '';
     $('ss-optpx').value = '0';
+    $('ss-colmerge').value = '0';
+    $('ss-v-colmerge').textContent = '0';
     $('ss-pivot-x').value = '';
     $('ss-pivot-y').value = '';
     player.frame = 0;
@@ -858,8 +933,32 @@ export function setupSpriteStudio(host, opts = {}) {
     let n = 0;
     // manual pixel-size override (0 = automatic detection)
     const forceK = parseFloat($('ss-optpx').value) || 0;
+    // similar-color merging happens FIRST so the merged palette drives the
+    // grid fit and cell voting (larger flat regions → fewer primitives)
+    const colTol = parseInt($('ss-colmerge').value, 10) || 0;
     for (const group of groups.values()) {
-      const res = optimizeSpriteGroup(group.map((a) => a.pixels), { forceK });
+      const srcs = group.map((a) =>
+        colTol ? mergeSimilarColors(a.pixels, colTol) : a.pixels);
+      let res = optimizeSpriteGroup(srcs, { forceK });
+      // the optimizer may no-op on already-clean pixel art — with color
+      // merging active, still apply the merged palette as the result
+      if (!res && colTol) {
+        res = {
+          frames: srcs.map((p) => {
+            const cv = document.createElement('canvas');
+            cv.width = p.width; cv.height = p.height;
+            const ctx = cv.getContext('2d', { willReadFrequently: true });
+            const img = ctx.createImageData(p.width, p.height);
+            img.data.set(p.data);
+            ctx.putImageData(img, 0, 0);
+            return { width: p.width, height: p.height, data: img.data, canvas: cv };
+          }),
+          k: 1,
+          kLabel: '1',
+          trim: { x: 0, y: 0 },
+          mapPoint: (mx, my) => ({ x: mx, y: my }),
+        };
+      }
       if (!res) continue;
       group.forEach((asset, i) => {
         const { width: ow, height: oh } = asset.pixels;
@@ -892,6 +991,11 @@ export function setupSpriteStudio(host, opts = {}) {
     renderAll();
   });
 
+  // live value readout for the color-merge slider
+  $('ss-colmerge').addEventListener('input', () => {
+    $('ss-v-colmerge').textContent = $('ss-colmerge').value;
+  });
+
   // restore every image to its original, unoptimized state
   $('ss-optreset').addEventListener('click', () => {
     for (const asset of state.assets) {
@@ -903,6 +1007,8 @@ export function setupSpriteStudio(host, opts = {}) {
       results.delete(asset.id); // stale conversion
     }
     $('ss-optpx').value = '0';
+    $('ss-colmerge').value = '0';
+    $('ss-v-colmerge').textContent = '0';
     $('ss-optinfo').textContent = '';
     lastPreviewKey = '';
     renderAll();

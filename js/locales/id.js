@@ -518,4 +518,6 @@ export default {
   "tip.ss.optreset": "Mengembalikan semua gambar ke keadaan impor aslinya, membatalkan optimasi gambar",
   "t.cancelled": "Konversi dibatalkan",
   "ss.drop": "Letakkan gambar, GIF, atau sprite sheet di sini",
+  "ss.colmerge": "Gabungkan warna serupa",
+  "tip.ss.colmerge": "Warna dalam jarak RGB ini digabung menjadi satu warna perwakilan saat optimasi gambar — area datar yang lebih besar berarti primitif lebih sedikit, dengan sedikit variasi warna. 0 = mati",
 };
