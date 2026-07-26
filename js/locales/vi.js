@@ -520,4 +520,9 @@ export default {
   "ss.drop": "Thả hình ảnh, GIF hoặc sprite sheet vào đây",
   "ss.colmerge": "Gộp màu tương tự",
   "tip.ss.colmerge": "Các màu trong khoảng cách RGB này được gộp thành một màu đại diện khi tối ưu hình — vùng phẳng lớn hơn nghĩa là ít khối cơ bản hơn, đổi lại màu thay đổi nhẹ. 0 = tắt",
+  "notice.long.title": "Quá trình chuyển đổi đang lâu hơn bình thường",
+  "notice.long.p1": "Ảnh của bạn có nhiều chi tiết nhỏ nên việc xử lý có thể lâu hơn một chút.",
+  "notice.long.p2": "Nếu ảnh chưa phải pixel art thật, hãy thử “Ghi đè kích thước pixel (px)” để đơn giản hóa trước khi chuyển đổi.",
+  "notice.long.p3": "Quá trình xử lý vẫn tiếp tục ở chế độ nền.",
+  "notice.openoverride": "Mở ghi đè kích thước pixel",
 };

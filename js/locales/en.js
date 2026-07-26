@@ -521,4 +521,9 @@ export default {
   "ss.drop": "Drop images, GIFs, or sprite sheets here",
   "ss.colmerge": "Merge similar colors",
   "tip.ss.colmerge": "Colors within this RGB distance are merged into one representative color during Optimize Images — larger flat regions mean fewer primitives, at the cost of slight color variation. 0 = off",
+  "notice.long.title": "Conversion is taking longer than usual",
+  "notice.long.p1": "Your image contains many small details, so processing may take a little longer.",
+  "notice.long.p2": "If your image isn't already true pixel art, try Pixel size override (px) to simplify it before converting.",
+  "notice.long.p3": "Processing will continue in the background.",
+  "notice.openoverride": "Open Pixel Size Override",
 };

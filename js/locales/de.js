@@ -520,4 +520,9 @@ export default {
   "ss.drop": "Bilder, GIFs oder Sprite-Sheets hier ablegen",
   "ss.colmerge": "Ähnliche Farben zusammenführen",
   "tip.ss.colmerge": "Farben innerhalb dieses RGB-Abstands werden bei der Bildoptimierung zu einer repräsentativen Farbe zusammengeführt — größere einfarbige Flächen bedeuten weniger Grundkörper, bei leichter Farbabweichung. 0 = aus",
+  "notice.long.title": "Die Konvertierung dauert länger als üblich",
+  "notice.long.p1": "Dein Bild enthält viele kleine Details, daher kann die Verarbeitung etwas länger dauern.",
+  "notice.long.p2": "Wenn dein Bild noch keine echte Pixelgrafik ist, vereinfache es vorher mit „Pixelgröße überschreiben (px)“.",
+  "notice.long.p3": "Die Verarbeitung läuft im Hintergrund weiter.",
+  "notice.openoverride": "Pixelgrößen-Überschreibung öffnen",
 };

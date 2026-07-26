@@ -520,4 +520,9 @@ export default {
   "ss.drop": "Déposez ici des images, GIF ou feuilles de sprites",
   "ss.colmerge": "Fusionner les couleurs similaires",
   "tip.ss.colmerge": "Les couleurs situées sous cette distance RGB sont fusionnées en une couleur représentative lors de l'optimisation — des zones unies plus grandes signifient moins de primitives, au prix d'une légère variation de couleur. 0 = désactivé",
+  "notice.long.title": "La conversion prend plus de temps que d'habitude",
+  "notice.long.p1": "Votre image contient beaucoup de petits détails, le traitement peut donc être un peu plus long.",
+  "notice.long.p2": "Si votre image n'est pas encore du vrai pixel art, essayez « Taille de pixel forcée (px) » pour la simplifier avant la conversion.",
+  "notice.long.p3": "Le traitement se poursuit en arrière-plan.",
+  "notice.openoverride": "Ouvrir la taille de pixel forcée",
 };

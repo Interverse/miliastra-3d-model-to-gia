@@ -852,6 +852,85 @@ export function initApp({ mode = "gia" } = {}) {
   // manually toggling the Model button also dismisses the notice
   $("tb-model").addEventListener("click", hideGenNotice);
 
+  // ---------- long-running conversion notice (sprite workflow) ----------
+  // A non-blocking notice explains why conversion can be slow and offers a
+  // shortcut to the Pixel size override; the conversion keeps running.
+  //
+  // The 10 s budget is PER IMAGE, not per batch: converting many sprites
+  // legitimately takes a while without any single one of them being the
+  // problem, so each finished image restarts the countdown (see onProgress).
+  // The notice therefore only appears once ONE image has been grinding for
+  // 10 s — exactly the case its "simplify it first" advice applies to.
+  const LONG_NOTICE_MS = 10000;
+  let longNoticeTimer = 0;
+  let longNoticeDismissed = false; // stays hidden for the rest of this run
+  function hideLongNotice() {
+    $("long-notice")?.remove();
+  }
+  function armLongNotice() {
+    clearTimeout(longNoticeTimer);
+    longNoticeTimer = setTimeout(showLongNotice, LONG_NOTICE_MS);
+  }
+  function disarmLongNotice() {
+    clearTimeout(longNoticeTimer);
+    longNoticeDismissed = false; // the next conversion starts clean
+    hideLongNotice();
+  }
+  function showLongNotice() {
+    if (!busy || !spriteMode || longNoticeDismissed) return;
+    // re-arming must never rebuild a notice the user is already reading
+    if ($("long-notice")) return;
+    const el = document.createElement("div");
+    el.id = "long-notice";
+    // title + short paragraphs, so the notice can be scanned rather than read
+    const title = document.createElement("div");
+    title.className = "long-notice-title";
+    title.textContent = t("notice.long.title");
+    const body = document.createElement("div");
+    body.className = "long-notice-body";
+    for (const key of ["notice.long.p1", "notice.long.p2", "notice.long.p3"]) {
+      const p = document.createElement("p");
+      p.textContent = t(key);
+      body.appendChild(p);
+    }
+    const actions = document.createElement("div");
+    actions.className = "long-notice-actions";
+    const open = document.createElement("button");
+    open.className = "mini long-notice-open";
+    open.textContent = t("notice.openoverride");
+    open.addEventListener("click", () => {
+      longNoticeDismissed = true;
+      hideLongNotice();
+      revealPixelOverride();
+    });
+    const cancel = document.createElement("button");
+    cancel.className = "mini danger";
+    cancel.textContent = t("btn.cancel");
+    cancel.addEventListener("click", () => cancelGeneration());
+    actions.append(open, cancel);
+    const x = document.createElement("button");
+    x.className = "mini gen-notice-x";
+    x.textContent = "✕";
+    x.title = t("tip.modal.close");
+    x.addEventListener("click", () => {
+      longNoticeDismissed = true;
+      hideLongNotice();
+    });
+    el.append(title, body, actions, x);
+    $("viewport").appendChild(el);
+  }
+  // expand the Images panel, scroll the override row into view, pulse it
+  function revealPixelOverride() {
+    const row = $("ss-optpx-row");
+    if (!row) return;
+    row.closest("details")?.setAttribute("open", "");
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.classList.remove("pulse-highlight");
+    void row.offsetWidth; // restart the animation if already applied
+    row.classList.add("pulse-highlight");
+    setTimeout(() => row.classList.remove("pulse-highlight"), 2800);
+  }
+
   function setModel(object) {
     currentObject = object;
     displayedObject = object;
@@ -1008,7 +1087,13 @@ export function initApp({ mode = "gia" } = {}) {
         onValidity: (ok) => {
           if (spriteMode) $("btn-generate").disabled = !ok || busy;
         },
-        onProgress: (frac) => setProgress(20 + frac * 78),
+        onProgress: (frac) => {
+          setProgress(20 + frac * 78);
+          // one image finished, so the next one gets a fresh budget. Skipped
+          // at 1.0: what follows is export/scene building, which the notice's
+          // per-image advice cannot speed up.
+          if (busy && frac < 1) armLongNotice();
+        },
         getCollision: () => $("p-collision")?.checked ?? true,
         getAutoAssemble: () => $("p-autoasm")?.checked ?? false,
         onClear: () => clearReconstructions(),
@@ -1189,6 +1274,7 @@ export function initApp({ mode = "gia" } = {}) {
       : !extracted && !spriteImageName;
     $("btn-generate").textContent = t("btn.generate");
     endProgress();
+    disarmLongNotice();
     showToast(t("t.cancelled"));
   }
 
@@ -1204,6 +1290,7 @@ export function initApp({ mode = "gia" } = {}) {
       $("btn-generate").textContent = t("btn.converting");
       setGenerating(true);
       beginProgress();
+      armLongNotice();
       try {
         await spriteStudio.generate(); // onGenerated adds the reconstructions
       } catch {
@@ -1214,6 +1301,7 @@ export function initApp({ mode = "gia" } = {}) {
         $("btn-generate").disabled = !spriteStudio.isValid();
         $("btn-generate").textContent = t("btn.generate");
         endProgress();
+        disarmLongNotice();
       }
       return;
     }

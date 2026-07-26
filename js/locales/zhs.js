@@ -520,4 +520,9 @@ export default {
   "ss.drop": "将图片、GIF 或精灵表拖放到此处",
   "ss.colmerge": "合并相似颜色",
   "tip.ss.colmerge": "优化图片时，将此 RGB 距离内的颜色合并为一个代表色——更大的平坦区域意味着更少的图元，代价是颜色略有变化。0 = 关闭",
+  "notice.long.title": "转换耗时比平时更长",
+  "notice.long.p1": "图片中的细小细节较多，处理可能需要更长时间。",
+  "notice.long.p2": "如果图片还不是真正的像素画，可先用「手动指定像素尺寸 (px)」简化后再转换。",
+  "notice.long.p3": "处理会在后台继续进行。",
+  "notice.openoverride": "打开像素尺寸指定",
 };

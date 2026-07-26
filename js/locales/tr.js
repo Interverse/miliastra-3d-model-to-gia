@@ -520,4 +520,9 @@ export default {
   "ss.drop": "Görselleri, GIF'leri veya sprite sayfalarını buraya bırakın",
   "ss.colmerge": "Benzer renkleri birleştir",
   "tip.ss.colmerge": "Görsel iyileştirme sırasında bu RGB mesafesi içindeki renkler tek bir temsilci renkte birleştirilir — daha büyük düz alanlar daha az temel şekil demektir, karşılığında hafif renk sapması olur. 0 = kapalı",
+  "notice.long.title": "Dönüştürme normalden uzun sürüyor",
+  "notice.long.p1": "Görselinizde çok sayıda küçük ayrıntı var, bu yüzden işlem biraz daha uzun sürebilir.",
+  "notice.long.p2": "Görseliniz henüz gerçek piksel sanatı değilse, dönüştürmeden önce “Piksel boyutunu elle ayarla (px)” ile sadeleştirmeyi deneyin.",
+  "notice.long.p3": "İşlem arka planda devam ediyor.",
+  "notice.openoverride": "Piksel boyutu ayarını aç",
 };

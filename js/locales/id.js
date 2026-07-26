@@ -520,4 +520,9 @@ export default {
   "ss.drop": "Letakkan gambar, GIF, atau sprite sheet di sini",
   "ss.colmerge": "Gabungkan warna serupa",
   "tip.ss.colmerge": "Warna dalam jarak RGB ini digabung menjadi satu warna perwakilan saat optimasi gambar — area datar yang lebih besar berarti primitif lebih sedikit, dengan sedikit variasi warna. 0 = mati",
+  "notice.long.title": "Konversi memakan waktu lebih lama dari biasanya",
+  "notice.long.p1": "Gambar Anda memiliki banyak detail kecil, jadi pemrosesan bisa sedikit lebih lama.",
+  "notice.long.p2": "Jika gambar Anda belum benar-benar pixel art, coba “Paksa ukuran piksel (px)” untuk menyederhanakannya sebelum dikonversi.",
+  "notice.long.p3": "Pemrosesan tetap berjalan di latar belakang.",
+  "notice.openoverride": "Buka paksaan ukuran piksel",
 };
