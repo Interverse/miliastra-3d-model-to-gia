@@ -12,7 +12,7 @@
 // hardcoded English. renderShell() applies the active language and wires the
 // language selector.
 
-import { applyI18n, setLanguage, currentLang, LANGS, t } from "./i18n.js";
+import { applyI18n, setLanguage, currentLang, LANGS, t, onLangChange } from "./i18n.js";
 
 export function renderShell(root, {
   primitives = true,
@@ -531,6 +531,10 @@ export function renderShell(root, {
     }
     langSel.value = currentLang();
     langSel.addEventListener("change", () => setLanguage(langSel.value));
+    // keep in sync when the language changes elsewhere (cross-tab sync)
+    onLangChange((code) => {
+      langSel.value = code;
+    });
   }
 
   // fill in the active language (en renders synchronously)
